@@ -1,0 +1,9 @@
+bin/
+obj/
+publish/
+*.user
+.vs/
+.idea/
+.kotlin/
+*.swp
+TestResults/

@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9][0-9][0-9][0-9].[0-9][0-9][0-9][0-9]'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0'
+
+      - name: Replace android.jar with unstripped (Reginer/aosp-android-jar)
+        shell: pwsh
+        run: |
+          $api = 36
+          $dest = "$env:ANDROID_SDK_ROOT/platforms/android-$api/android.jar"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Reginer/aosp-android-jar/main/android-$api/android.jar" -OutFile $dest
+          Get-Item $dest
+
+      - name: Resolve version from tag
+        id: ver
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}' -replace '^v', ''
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Extract changelog section
+        shell: pwsh
+        run: |
+          $body = & .\scripts\extract_changelog.ps1 -Version '${{ steps.ver.outputs.version }}'
+          $body | Out-File release_notes.md -Encoding utf8 -NoNewline
+
+      - name: Build agent
+        shell: cmd
+        run: agent\build.bat
+
+      - name: Test
+        run: dotnet test AndroidMcp.slnx -c Release --nologo
+
+      - name: Publish
+        shell: cmd
+        run: publish.bat
+
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          $version = '${{ steps.ver.outputs.version }}'
+          $stage = 'release-stage'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item publish/win-x64/android-mcp.exe          "$stage/android-mcp-$version-win-x64.exe"
+          Copy-Item publish/win-x64/tools/agent-server.jar   "$stage/agent-server-$version.jar"
+          Compress-Archive -Path publish/win-x64/* -DestinationPath "$stage/android-mcp-$version-win-x64.zip"
+          Get-ChildItem $stage
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.ver.outputs.version }}
+          body_path: release_notes.md
+          files: release-stage/*
+          draft: false
+          prerelease: false
