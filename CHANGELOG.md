@@ -6,6 +6,11 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+## [2606.0003] - 2026-06-11
+
+### Fixed
+- Refuse to launch the on-device agent while the device is still booting (`sys.boot_completed != 1`), preventing a guaranteed `UiAutomation.connect` crash right after reboot.
+
 ## [2605.0001] - 2026-05-13
 
 ### Added
