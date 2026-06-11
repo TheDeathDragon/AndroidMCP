@@ -124,6 +124,11 @@ internal sealed class AgentSession : IDisposable
         }
         try
         {
+            if (!IsBootCompleted(client, device))
+            {
+                Log.Error($"device {serial} is still booting (sys.boot_completed != 1); agent start refused");
+                return false;
+            }
             long t0 = Stopwatch.GetTimestamp();
             PushAgent(client, device);
             long t1 = Stopwatch.GetTimestamp();
@@ -158,6 +163,20 @@ internal sealed class AgentSession : IDisposable
 
     private static double Ms(long a, long b) =>
         (b - a) * 1000.0 / Stopwatch.Frequency;
+
+    private static bool IsBootCompleted(AdbClient client, DeviceData device)
+    {
+        try
+        {
+            ConsoleOutputReceiver receiver = new();
+            client.ExecuteRemoteCommand("getprop sys.boot_completed", device, receiver, Encoding.UTF8);
+            return receiver.ToString().Trim() == "1";
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static void PushAgent(AdbClient client, DeviceData device)
     {
