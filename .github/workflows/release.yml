@@ -59,9 +59,13 @@ jobs:
       - name: Test
         run: dotnet test AndroidMcp.slnx -c Release --nologo
 
-      - name: Publish
+      - name: Publish win-x64
         shell: cmd
         run: publish.bat
+
+      - name: Publish linux-x64
+        shell: cmd
+        run: publish.bat linux-x64
 
       - name: Stage release assets
         shell: pwsh
@@ -73,6 +77,16 @@ jobs:
           Copy-Item publish/win-x64/tools/agent-server.jar   "$stage/agent-server-$version.jar"
           Compress-Archive -Path publish/win-x64/* -DestinationPath "$stage/android-mcp-$version-win-x64.zip"
           Get-ChildItem $stage
+
+      - name: Stage linux-x64 tarball
+        shell: bash
+        run: |
+          version='${{ steps.ver.outputs.version }}'
+          # GNU tar --mode restores the exec bit lost when cross-publishing on Windows
+          tar --owner=0 --group=0 --numeric-owner --mode='u=rwx,go=rx' \
+            -czf "release-stage/android-mcp-$version-linux-x64.tar.gz" \
+            -C publish/linux-x64 android-mcp tools
+          tar -tvzf "release-stage/android-mcp-$version-linux-x64.tar.gz"
 
       - uses: softprops/action-gh-release@v2
         with:

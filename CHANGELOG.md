@@ -6,6 +6,9 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+### Added
+- linux-x64 release artifact (`android-mcp-<version>-linux-x64.tar.gz`).
+
 ### Fixed
 - Stdio transport drains in-flight requests before exiting on stdin close, so one-shot piped clients no longer lose responses.
 
