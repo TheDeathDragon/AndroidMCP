@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -18,6 +19,7 @@ internal sealed class StdioTransport : ITransport
             NewLine = "\n"
         };
         SemaphoreSlim writeGate = new(1, 1);
+        List<Task> pending = new();
         Log.Info("stdio transport listening");
         while (!ct.IsCancellationRequested)
         {
@@ -25,14 +27,15 @@ internal sealed class StdioTransport : ITransport
             if (line is null)
             {
                 Log.Info("stdin closed; transport exiting");
-                return;
+                break;
             }
             if (line.Length == 0)
             {
                 continue;
             }
 
-            _ = Task.Run(async () =>
+            pending.RemoveAll(static t => t.IsCompleted);
+            pending.Add(Task.Run(async () =>
             {
                 try
                 {
@@ -57,7 +60,12 @@ internal sealed class StdioTransport : ITransport
                 {
                     Log.Error($"stdio dispatch error: {ex.Message}");
                 }
-            }, ct);
+            }, ct));
         }
+        try
+        {
+            await Task.WhenAll(pending).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { }
     }
 }

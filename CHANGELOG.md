@@ -6,6 +6,9 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+### Fixed
+- Stdio transport drains in-flight requests before exiting on stdin close, so one-shot piped clients no longer lose responses.
+
 ## [2606.0003] - 2026-06-11
 
 ### Fixed
