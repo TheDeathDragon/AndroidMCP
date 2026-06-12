@@ -6,6 +6,8 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+## [2606.0006] - 2026-06-12
+
 ### Added
 - linux-x64 release artifact (`android-mcp-<version>-linux-x64.tar.gz`).
 
