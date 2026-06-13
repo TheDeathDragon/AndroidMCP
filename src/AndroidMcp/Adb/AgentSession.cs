@@ -129,15 +129,18 @@ internal sealed class AgentSession : IDisposable
                 Log.Error($"device {serial} is still booting (sys.boot_completed != 1); agent start refused");
                 return false;
             }
+            // Launch on the canonical port so this agent is reusable by other tools
+            // (a second app_process would deadlock on the UiAutomation singleton);
+            // the per-device host port still forwards to it.
             long t0 = Stopwatch.GetTimestamp();
             PushAgent(client, device);
             long t1 = Stopwatch.GetTimestamp();
-            KillStaleOnPort(client, device, localPort);
+            KillStaleOnPort(client, device, CanonicalAgentPort);
             long t2 = Stopwatch.GetTimestamp();
             Thread.Sleep(150);
-            LaunchServerProcess(client, device, localPort);
+            LaunchServerProcess(client, device, CanonicalAgentPort);
             long t3 = Stopwatch.GetTimestamp();
-            client.CreateForward(device, $"tcp:{localPort}", $"tcp:{localPort}", allowRebind: true);
+            client.CreateForward(device, $"tcp:{localPort}", $"tcp:{CanonicalAgentPort}", allowRebind: true);
             long t4 = Stopwatch.GetTimestamp();
             if (!WaitForHealth())
             {
@@ -145,11 +148,11 @@ internal sealed class AgentSession : IDisposable
             }
 
             long t5 = Stopwatch.GetTimestamp();
-            remotePort = localPort;
+            remotePort = CanonicalAgentPort;
             weLaunched = true;
             started = true;
             Log.Info(
-                $"agent launched on {serial}:{localPort} " +
+                $"agent launched on {serial}: forward {localPort} -> :{CanonicalAgentPort} " +
                 $"[push {Ms(t0, t1):0}ms kill {Ms(t1, t2):0}ms launch {Ms(t2, t3):0}ms " +
                 $"forward {Ms(t3, t4):0}ms health {Ms(t4, t5):0}ms]");
             return true;
