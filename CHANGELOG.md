@@ -6,6 +6,11 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+## [2606.0008] - 2026-06-13
+
+### Changed
+- Self-launched on-device agent now starts on the canonical port `9500` instead of the per-device host port, so a PC-side agent and a server-side AndroidMCP can share one `UiAutomation` instance; the per-device host port still forwards to it.
+
 ## [2606.0006] - 2026-06-12
 
 ### Added
