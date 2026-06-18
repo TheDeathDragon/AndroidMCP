@@ -6,6 +6,11 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+## [2606.0012] - 2026-06-18
+
+### Fixed
+- Open the per-device agent's adb forward by transport-id (`adb -t <id> forward`) instead of the AdvancedSharpAdbClient `host-serial:` forward, which fails with "more than one device" when two devices share a serial. Agent-backed tools (screenshot / dump_hierarchy / find_element / scroll) now start and route correctly on devices with duplicate serials; previously only the direct shell/input path worked there.
+
 ## [2606.0010] - 2026-06-18
 
 ### Fixed
