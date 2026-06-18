@@ -6,6 +6,11 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+## [2606.0010] - 2026-06-18
+
+### Fixed
+- Route every device operation by adb transport-id instead of serial. Two connected devices that report the same serial (common on clone / low-cost hardware with an unset `ro.serialno`) were collapsed onto one session, leaving the second unreachable; each now gets its own session and routes correctly. `list_devices` exposes `transportId` — pass it as `serial` to target a device whose serial is shared, and an ambiguous serial now errors with that guidance instead of silently hitting the first match.
+
 ## [2606.0008] - 2026-06-13
 
 ### Changed
