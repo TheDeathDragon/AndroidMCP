@@ -92,20 +92,14 @@ internal sealed class AgentSession : IDisposable
     // UiAutomation.connect — detect it and forward to the existing one.
     private bool TryReuseCanonicalAgent(AdbClient client, DeviceData device)
     {
-        try
+        if (!adbHub.CreateForwardByTransportId(transportId, localPort, CanonicalAgentPort))
         {
-            client.CreateForward(device, $"tcp:{localPort}", $"tcp:{CanonicalAgentPort}", allowRebind: true);
-        }
-        catch (Exception ex)
-        {
-            Log.Debug($"forward probe failed on transport {transportId}: {ex.Message}");
+            Log.Debug($"forward probe failed on transport {transportId}");
             return false;
         }
         if (!CheckHealth())
         {
-            try
-            { client.RemoveForward(device, localPort); }
-            catch { }
+            adbHub.RemoveForwardByTransportId(transportId, localPort);
             return false;
         }
         remotePort = CanonicalAgentPort;
@@ -140,7 +134,7 @@ internal sealed class AgentSession : IDisposable
             Thread.Sleep(150);
             LaunchServerProcess(client, device, CanonicalAgentPort);
             long t3 = Stopwatch.GetTimestamp();
-            client.CreateForward(device, $"tcp:{localPort}", $"tcp:{CanonicalAgentPort}", allowRebind: true);
+            adbHub.CreateForwardByTransportId(transportId, localPort, CanonicalAgentPort);
             long t4 = Stopwatch.GetTimestamp();
             if (!WaitForHealth())
             {
@@ -280,11 +274,7 @@ internal sealed class AgentSession : IDisposable
         }
         try
         {
-            DeviceData? device = adbHub.FindDeviceByTransportId(transportId);
-            if (device is not null)
-            {
-                adbHub.Client.RemoveForward(device, localPort);
-            }
+            adbHub.RemoveForwardByTransportId(transportId, localPort);
         }
         catch
         {

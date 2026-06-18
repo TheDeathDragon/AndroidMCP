@@ -145,6 +145,57 @@ internal sealed class AdbHub
         return d;
     }
 
+    // adb's forward host service is addressed by serial (host-serial:...) in
+    // AdvancedSharpAdbClient, which is ambiguous when two devices share a serial
+    // ("more than one device"). Shell out to `adb -t <transport-id> forward` so
+    // the forward binds to the exact transport.
+    public bool CreateForwardByTransportId(string transportId, int localPort, int remotePort)
+        => RunForward(transportId, new[] { $"tcp:{localPort}", $"tcp:{remotePort}" });
+
+    public void RemoveForwardByTransportId(string transportId, int localPort)
+        => RunForward(transportId, new[] { "--remove", $"tcp:{localPort}" });
+
+    private bool RunForward(string transportId, string[] forwardArgs)
+    {
+        try
+        {
+            ProcessStartInfo psi = new(ResolvedAdbPath)
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("-t");
+            psi.ArgumentList.Add(transportId);
+            psi.ArgumentList.Add("forward");
+            foreach (string a in forwardArgs)
+            {
+                psi.ArgumentList.Add(a);
+            }
+            using Process? proc = Process.Start(psi);
+            if (proc is null)
+            {
+                return false;
+            }
+            proc.StandardOutput.ReadToEnd();
+            proc.StandardError.ReadToEnd();
+            if (!proc.WaitForExit(8000))
+            {
+                try
+                { proc.Kill(true); }
+                catch { }
+                return false;
+            }
+            return proc.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug($"adb -t {transportId} forward failed: {ex.Message}");
+            return false;
+        }
+    }
+
     private void EnsureInitialized()
     {
         if (initialized)
