@@ -18,7 +18,7 @@ internal sealed class ListDevicesTool : IToolHandler
         Descriptor = new ToolDescriptor
         {
             Name = "list_devices",
-            Description = "Enumerate Android devices currently visible to adb. Returns serial, state, model, product for each. Always call this before any other tool to discover the device serial to pass.",
+            Description = "Enumerate Android devices currently visible to adb. Returns serial, state, model, product and transportId for each. Always call this before any other tool to discover the device serial to pass. If two devices share the same serial, pass the per-device transportId (unique) as the 'serial' argument to target one unambiguously.",
             InputSchema = Schema.Object()
         };
     }

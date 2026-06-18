@@ -64,17 +64,83 @@ internal sealed class AdbHub
         return null;
     }
 
-    public DeviceData RequireDevice(string serial)
+    // Direct-path tools (shell / input / scroll / file transfer) resolve here.
+    // Delegating to ResolveDevice gives them the same serial-or-transport-id
+    // handling as the agent path, so duplicate serials are disambiguated (or
+    // rejected with guidance) everywhere rather than silently hitting the first.
+    public DeviceData RequireDevice(string handle) => ResolveDevice(handle);
+
+    public DeviceData? FindDeviceByTransportId(string transportId)
     {
-        DeviceData? d = FindDeviceBySerial(serial);
-        if (d is null)
+        EnsureInitialized();
+        if (client is null)
         {
-            throw new InvalidOperationException($"device not connected: {serial}");
+            return null;
         }
 
+        foreach (DeviceData d in client.GetDevices())
+        {
+            if (string.Equals(d.TransportId, transportId, StringComparison.Ordinal))
+            {
+                return d;
+            }
+        }
+        return null;
+    }
+
+    public DeviceData RequireDeviceByTransportId(string transportId)
+    {
+        DeviceData? d = FindDeviceByTransportId(transportId);
+        if (d is null)
+        {
+            throw new InvalidOperationException($"device not connected (transport {transportId})");
+        }
+
+        return RequireOnline(d);
+    }
+
+    // Resolves a caller handle to exactly one device. The handle is a serial
+    // when serials are unique; when two devices share a serial it is ambiguous
+    // and the caller must pass the transport-id instead (list_devices surfaces
+    // it). adb then addresses the device by host:transport-id, so duplicate
+    // serials route correctly once resolved here.
+    public DeviceData ResolveDevice(string handle)
+    {
+        EnsureInitialized();
+        if (client is null)
+        {
+            throw new InvalidOperationException("ADB client not available");
+        }
+
+        List<DeviceData> all = client.GetDevices().ToList();
+        List<DeviceData> bySerial = all.FindAll(d => string.Equals(d.Serial, handle, StringComparison.Ordinal));
+        DeviceData? byTransport = all.Find(d => string.Equals(d.TransportId, handle, StringComparison.Ordinal));
+        if (bySerial.Count == 1)
+        {
+            return RequireOnline(bySerial[0]);
+        }
+        if (bySerial.Count > 1)
+        {
+            if (byTransport is not null)
+            {
+                return RequireOnline(byTransport);
+            }
+            throw new InvalidOperationException(
+                $"serial '{handle}' is ambiguous: {bySerial.Count} connected devices share it; " +
+                "pass the transportId from list_devices instead of the serial");
+        }
+        if (byTransport is not null)
+        {
+            return RequireOnline(byTransport);
+        }
+        throw new InvalidOperationException($"device not connected: {handle}");
+    }
+
+    private static DeviceData RequireOnline(DeviceData d)
+    {
         if (d.State != DeviceState.Online)
         {
-            throw new InvalidOperationException($"device {serial} state is {d.State}, expected Online");
+            throw new InvalidOperationException($"device {d.Serial} state is {d.State}, expected Online");
         }
         return d;
     }

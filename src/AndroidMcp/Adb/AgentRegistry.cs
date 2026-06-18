@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using AdvancedSharpAdbClient.Models;
 using AndroidMcp.Logging;
 
 namespace AndroidMcp.Adb;
@@ -17,39 +18,50 @@ internal sealed class AgentRegistry : IDisposable
         this.portAllocator = portAllocator;
     }
 
-    public AgentSession GetOrCreate(string serial)
+    // Sessions are keyed by transport-id, not serial: two devices can report
+    // the same serial, but each USB connection has a unique transport-id, so
+    // this is what disambiguates them (and what adb routes by).
+    public AgentSession GetOrCreate(string handle)
     {
-        if (string.IsNullOrEmpty(serial))
+        if (string.IsNullOrEmpty(handle))
         {
-            throw new ArgumentException("serial required", nameof(serial));
+            throw new ArgumentException("device handle required", nameof(handle));
         }
 
-        return sessions.GetOrAdd(serial, s =>
+        DeviceData device = adbHub.ResolveDevice(handle);
+        string transportId = device.TransportId;
+        return sessions.GetOrAdd(transportId, tid =>
         {
             int? port = portAllocator.TryAllocate();
             if (port is null)
             {
                 throw new InvalidOperationException(
-                    "agent port pool exhausted (9501-9599); release some sessions first");
+                    "agent port pool exhausted (9601-9699); release some sessions first");
             }
-            Log.Info($"creating agent session for {s} on port {port}");
-            return new AgentSession(adbHub, s, port.Value);
+            Log.Info($"creating agent session for {device.Serial} (transport {tid}) on port {port}");
+            return new AgentSession(adbHub, tid, port.Value);
         });
     }
 
-    public AgentSession EnsureStarted(string serial)
+    public AgentSession EnsureStarted(string handle)
     {
-        AgentSession session = GetOrCreate(serial);
+        AgentSession session = GetOrCreate(handle);
         if (!session.EnsureStarted())
         {
-            throw new InvalidOperationException($"failed to start agent for {serial} on port {session.Port}");
+            throw new InvalidOperationException(
+                $"failed to start agent for transport {session.TransportId} on port {session.Port}");
         }
         return session;
     }
 
-    public bool TryDrop(string serial)
+    public bool TryDrop(string handle)
     {
-        if (!sessions.TryRemove(serial, out AgentSession? session))
+        string key;
+        try
+        { key = adbHub.ResolveDevice(handle).TransportId; }
+        catch
+        { key = handle; }
+        if (!sessions.TryRemove(key, out AgentSession? session))
         {
             return false;
         }

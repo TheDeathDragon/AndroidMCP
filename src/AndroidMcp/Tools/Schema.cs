@@ -57,5 +57,6 @@ internal static class Schema
     }
 
     public const string SerialDescription =
-        "device serial as reported by `adb devices` (use the list_devices tool to discover)";
+        "device serial from list_devices. If two connected devices report the same serial, " +
+        "pass that device's transportId here instead (list_devices returns it) so the correct one is targeted";
 }

@@ -22,7 +22,7 @@ internal sealed class AgentSession : IDisposable
         AppContext.BaseDirectory, "tools", "agent-server.jar");
 
     private readonly AdbHub adbHub;
-    private readonly string serial;
+    private readonly string transportId;
     private readonly int localPort;
     private readonly HttpClient http;
     private readonly object startGate = new();
@@ -30,17 +30,17 @@ internal sealed class AgentSession : IDisposable
     private int remotePort;
     private bool weLaunched;
 
-    public string Serial => serial;
+    public string TransportId => transportId;
     public int Port => localPort;
     public int RemotePort => remotePort;
     public bool ReusingExistingAgent => started && !weLaunched;
     public bool IsStarted => started;
     public HttpClient Http => http;
 
-    public AgentSession(AdbHub adbHub, string serial, int localPort)
+    public AgentSession(AdbHub adbHub, string transportId, int localPort)
     {
         this.adbHub = adbHub;
-        this.serial = serial;
+        this.transportId = transportId;
         this.localPort = localPort;
         // Pool retain-window races with the agent's Connection: close, surfacing
         // as "error sending request" on the first call after a quiet period.
@@ -77,7 +77,7 @@ internal sealed class AgentSession : IDisposable
 
     private bool Start()
     {
-        DeviceData device = adbHub.RequireDevice(serial);
+        DeviceData device = adbHub.RequireDeviceByTransportId(transportId);
         AdbClient client = adbHub.Client;
         if (TryReuseCanonicalAgent(client, device))
         {
@@ -98,7 +98,7 @@ internal sealed class AgentSession : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Debug($"forward probe failed on {serial}: {ex.Message}");
+            Log.Debug($"forward probe failed on transport {transportId}: {ex.Message}");
             return false;
         }
         if (!CheckHealth())
@@ -111,7 +111,7 @@ internal sealed class AgentSession : IDisposable
         remotePort = CanonicalAgentPort;
         weLaunched = false;
         started = true;
-        Log.Info($"agent reused on {serial}: forward {localPort} -> :{CanonicalAgentPort}");
+        Log.Info($"agent reused on transport {transportId}: forward {localPort} -> :{CanonicalAgentPort}");
         return true;
     }
 
@@ -126,7 +126,7 @@ internal sealed class AgentSession : IDisposable
         {
             if (!IsBootCompleted(client, device))
             {
-                Log.Error($"device {serial} is still booting (sys.boot_completed != 1); agent start refused");
+                Log.Error($"device transport {transportId} is still booting (sys.boot_completed != 1); agent start refused");
                 return false;
             }
             // Launch on the canonical port so this agent is reusable by other tools
@@ -152,14 +152,14 @@ internal sealed class AgentSession : IDisposable
             weLaunched = true;
             started = true;
             Log.Info(
-                $"agent launched on {serial}: forward {localPort} -> :{CanonicalAgentPort} " +
+                $"agent launched on transport {transportId}: forward {localPort} -> :{CanonicalAgentPort} " +
                 $"[push {Ms(t0, t1):0}ms kill {Ms(t1, t2):0}ms launch {Ms(t2, t3):0}ms " +
                 $"forward {Ms(t3, t4):0}ms health {Ms(t4, t5):0}ms]");
             return true;
         }
         catch (Exception ex)
         {
-            Log.Error($"agent start failed on {serial}: {ex.Message}");
+            Log.Error($"agent start failed on transport {transportId}: {ex.Message}");
             return false;
         }
     }
@@ -233,7 +233,7 @@ internal sealed class AgentSession : IDisposable
 
             Thread.Sleep(HealthIntervalMs);
         }
-        Log.Error($"agent health check timed out for {serial}:{localPort}");
+        Log.Error($"agent health check timed out for transport {transportId}:{localPort}");
         return false;
     }
 
@@ -268,7 +268,7 @@ internal sealed class AgentSession : IDisposable
             }
             try
             {
-                DeviceData? device = adbHub.FindDeviceBySerial(serial);
+                DeviceData? device = adbHub.FindDeviceByTransportId(transportId);
                 if (device is not null)
                 {
                     KillStaleOnPort(adbHub.Client, device, rp);
@@ -280,7 +280,7 @@ internal sealed class AgentSession : IDisposable
         }
         try
         {
-            DeviceData? device = adbHub.FindDeviceBySerial(serial);
+            DeviceData? device = adbHub.FindDeviceByTransportId(transportId);
             if (device is not null)
             {
                 adbHub.Client.RemoveForward(device, localPort);
