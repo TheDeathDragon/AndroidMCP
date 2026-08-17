@@ -46,24 +46,6 @@ internal sealed class AdbHub
         return client.GetDevices().ToList();
     }
 
-    public DeviceData? FindDeviceBySerial(string serial)
-    {
-        EnsureInitialized();
-        if (client is null)
-        {
-            return null;
-        }
-
-        foreach (DeviceData d in client.GetDevices())
-        {
-            if (string.Equals(d.Serial, serial, StringComparison.Ordinal))
-            {
-                return d;
-            }
-        }
-        return null;
-    }
-
     // Direct-path tools (shell / input / scroll / file transfer) resolve here.
     // Delegating to ResolveDevice gives them the same serial-or-transport-id
     // handling as the agent path, so duplicate serials are disambiguated (or
