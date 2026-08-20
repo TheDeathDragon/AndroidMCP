@@ -6,14 +6,13 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+## [2608.0015] - 2026-08-20
+
 ### Added
-- `scripts/install.sh` — Linux one-liner installer (linux-x64 tarball ->
-  `~/.local/share/android-mcp/`, `--auto-config` / `--version` /
-  `--install-dir`). READMEs document Linux install, config path and build.
+- `scripts/install.sh`, a Linux one-liner installer: unpacks the linux-x64 tarball into `~/.local/share/android-mcp/` and prints the Claude Code config, or merges it with `--auto-config`. Also takes `--version` and `--install-dir`. Both READMEs now cover Linux install, config path and building from source.
 
 ### Removed
-- Dead `AdbHub.FindDeviceBySerial`, a first-match lookup that ignored the
-  transport-id routing added in 2606.0010.
+- Dead `AdbHub.FindDeviceBySerial`, a first-match serial lookup left over from before transport-id routing (2606.0010).
 
 ## [2606.0012] - 2026-06-18
 
