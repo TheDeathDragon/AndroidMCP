@@ -14,9 +14,16 @@ End users install via:
 iwr https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.ps1 | iex
 ```
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.sh | sh
+```
+
 `scripts/install.ps1` resolves the latest GitHub Release, downloads the
 win-x64 zip, extracts to `%LOCALAPPDATA%\Programs\android-mcp\`, and prints
 the Claude Code config snippet (or merges with `-AutoConfig`).
+`scripts/install.sh` is the Linux twin: linux-x64 tarball ->
+`~/.local/share/android-mcp/`, `--auto-config` merges via `python3`. Keep the
+two in sync — POSIX `sh` only, no `jq`.
 
 ## Build
 

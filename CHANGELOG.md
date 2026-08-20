@@ -6,6 +6,15 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+### Added
+- `scripts/install.sh` — Linux one-liner installer (linux-x64 tarball ->
+  `~/.local/share/android-mcp/`, `--auto-config` / `--version` /
+  `--install-dir`). READMEs document Linux install, config path and build.
+
+### Removed
+- Dead `AdbHub.FindDeviceBySerial`, a first-match lookup that ignored the
+  transport-id routing added in 2606.0010.
+
 ## [2606.0012] - 2026-06-18
 
 ### Fixed

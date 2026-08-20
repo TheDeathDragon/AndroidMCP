@@ -9,7 +9,7 @@
 
 ## 安装
 
-PowerShell
+Windows（PowerShell）
 
 ```powershell
 iwr https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.ps1 | iex
@@ -21,17 +21,32 @@ iwr https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/ins
 & ([scriptblock]::Create((iwr https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.ps1))) -AutoConfig
 ```
 
-安装器会下载最新 release，解压到 `%LOCALAPPDATA%\Programs\android-mcp\`，并打印
-Claude Code 配置片段（或加 `-AutoConfig` 直接合并）。
+Linux（x86_64）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.sh | sh
+```
+
+或自动写入 `~/.claude.json`（需要 `python3`）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.sh | sh -s -- --auto-config
+```
+
+安装器会下载最新 release，解压到 `%LOCALAPPDATA%\Programs\android-mcp\` /
+`~/.local/share/android-mcp/`，并打印 Claude Code 配置片段（或加 `-AutoConfig` /
+`--auto-config` 直接合并）。`install.sh` 还支持 `--version <YYMM.NNNN>`、
+`--install-dir <目录>`。
 
 装完后 Claude Code 里 `/reload-plugins`，`android-mcp` 工具就可用。
 
-需要配置好 ADB 环境变量。
+需要配置好 ADB 环境变量。Linux 版是自包含单文件（不用装 .NET 运行时），但依赖
+glibc，Alpine 这类 musl 发行版跑不了。
 
 ## Claude Code 配置
 
-加 `-AutoConfig` 安装器会自动写。手动配则把以下加入 `~/.claude.json`
-（或 `claude_desktop_config.json`）：
+加 `-AutoConfig` / `--auto-config` 安装器会自动写。手动配则把以下加入
+`~/.claude.json`（或 `claude_desktop_config.json`）：
 
 ```json
 {
@@ -43,6 +58,8 @@ Claude Code 配置片段（或加 `-AutoConfig` 直接合并）。
   }
 }
 ```
+
+Linux 下 command 换成 `/home/<你>/.local/share/android-mcp/android-mcp`。
 
 ## 工具列表
 
@@ -96,22 +113,36 @@ Claude Code 配置片段（或加 `-AutoConfig` 直接合并）。
 
 ## 独立运行
 
-装好的 exe 也可以脱离 Claude Code 跑：
+装好的可执行文件也可以脱离 Claude Code 跑：
 
 ```
 %LOCALAPPDATA%\Programs\android-mcp\android-mcp.exe                # stdio
 %LOCALAPPDATA%\Programs\android-mcp\android-mcp.exe --http 9460    # HTTP + SSE
+~/.local/share/android-mcp/android-mcp                             # stdio（Linux）
+~/.local/share/android-mcp/android-mcp --http 9460                 # HTTP + SSE（Linux）
 ```
 
 参数：`--debug`（详细 stderr）、`--quiet`（仅警告）。
 
 ## 从源码构建
 
+Windows：
+
 ```
 git clone --recursive https://github.com/TheDeathDragon/AndroidMCP.git
 cd AndroidMCP
 agent\build.bat
-publish.bat
+publish.bat                # win-x64
+publish.bat linux-x64      # linux-x64
+```
+
+Linux：
+
+```bash
+git clone --recursive https://github.com/TheDeathDragon/AndroidMCP.git
+cd AndroidMCP/agent && ./gradlew assembleRelease && cd ..
+cp agent/build/outputs/apk/release/agent-server-release-unsigned.apk tools/agent-server.jar
+dotnet publish src/AndroidMcp/AndroidMcp.csproj -c Release -r linux-x64 -o publish/linux-x64
 ```
 
 ## 开源协议

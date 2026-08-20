@@ -9,7 +9,7 @@ MCP server for Android 11+ devices. C# .NET 8.
 
 ## Install
 
-PowerShell:
+Windows (PowerShell):
 
 ```powershell
 iwr https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.ps1 | iex
@@ -21,17 +21,32 @@ Or auto-merge into `~/.claude.json`:
 & ([scriptblock]::Create((iwr https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.ps1))) -AutoConfig
 ```
 
-The installer fetches the latest release, extracts to
-`%LOCALAPPDATA%\Programs\android-mcp\`, and prints the Claude Code config
-(or merges it with `-AutoConfig`).
+Linux (x86_64):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.sh | sh
+```
+
+Or auto-merge into `~/.claude.json` (needs `python3`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheDeathDragon/AndroidMCP/main/scripts/install.sh | sh -s -- --auto-config
+```
+
+Both installers fetch the latest release, extract to
+`%LOCALAPPDATA%\Programs\android-mcp\` / `~/.local/share/android-mcp/`, and
+print the Claude Code config (or merge it with `-AutoConfig` /
+`--auto-config`). Other `install.sh` flags: `--version <YYMM.NNNN>`,
+`--install-dir <dir>`.
 
 After install, `/reload-plugins` in Claude Code to load the tools.
 
-Requires `adb` on PATH.
+Requires `adb` on PATH. The Linux build is self-contained (no .NET runtime
+needed) but glibc-based — it does not run on musl distros such as Alpine.
 
 ## Claude Code config
 
-`-AutoConfig` writes this for you. Manual:
+`-AutoConfig` / `--auto-config` writes this for you. Manual:
 
 ```json
 {
@@ -43,6 +58,8 @@ Requires `adb` on PATH.
   }
 }
 ```
+
+On Linux the command is `/home/<you>/.local/share/android-mcp/android-mcp`.
 
 ## Tools
 
@@ -99,17 +116,31 @@ so MCP-aware clients inject them into the model's system prompt.
 ```
 %LOCALAPPDATA%\Programs\android-mcp\android-mcp.exe                # stdio
 %LOCALAPPDATA%\Programs\android-mcp\android-mcp.exe --http 9460    # HTTP + SSE
+~/.local/share/android-mcp/android-mcp                             # stdio (Linux)
+~/.local/share/android-mcp/android-mcp --http 9460                 # HTTP + SSE (Linux)
 ```
 
 Flags: `--debug`, `--quiet`.
 
 ## Build from source
 
+Windows:
+
 ```
 git clone --recursive https://github.com/TheDeathDragon/AndroidMCP.git
 cd AndroidMCP
 agent\build.bat
-publish.bat
+publish.bat                # win-x64
+publish.bat linux-x64      # linux-x64
+```
+
+Linux:
+
+```bash
+git clone --recursive https://github.com/TheDeathDragon/AndroidMCP.git
+cd AndroidMCP/agent && ./gradlew assembleRelease && cd ..
+cp agent/build/outputs/apk/release/agent-server-release-unsigned.apk tools/agent-server.jar
+dotnet publish src/AndroidMcp/AndroidMcp.csproj -c Release -r linux-x64 -o publish/linux-x64
 ```
 
 ## License
