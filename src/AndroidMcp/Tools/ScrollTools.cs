@@ -1,12 +1,9 @@
 using System;
-using System.Globalization;
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
-using AdvancedSharpAdbClient.Receivers;
 using AndroidMcp.Adb;
 using AndroidMcp.Mcp;
 
@@ -72,41 +69,48 @@ internal static class ScrollGeometry
 internal sealed class ScreenSizeTool : IToolHandler
 {
     private readonly AdbHub adb;
+    private readonly AgentRegistry agents;
     public ToolDescriptor Descriptor { get; }
 
-    public ScreenSizeTool(AdbHub adb)
+    public ScreenSizeTool(AdbHub adb, AgentRegistry agents)
     {
         this.adb = adb;
+        this.agents = agents;
         Descriptor = new ToolDescriptor
         {
             Name = "screen_size",
-            Description = "Return the device's current display size in pixels (Override size if set, otherwise Physical size).",
+            Description = "Return the current display size in pixels, in the current rotation (width and height swap in landscape).",
             InputSchema = Schema.Object(
                 ("serial", Schema.String(Schema.SerialDescription), true))
         };
     }
 
-    public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
+    public async Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
         DeviceData device = adb.RequireDevice(serial);
-        ScreenSize size = ScreenSize.Read(adb.Client, device);
-        return Task.FromResult(ToolCallResult.Json(new JsonObject
+        AgentSession session = agents.EnsureStarted(serial);
+        ScreenSize size = await ScreenSize.ReadAsync(session, adb.Client, device).ConfigureAwait(false);
+        return ToolCallResult.Json(new JsonObject
         {
             ["width"] = size.Width,
             ["height"] = size.Height
-        }));
+        });
     }
 }
 
 internal sealed class SwipeDirectionTool : IToolHandler
 {
     private readonly AdbHub adb;
+    private readonly AgentRegistry agents;
+    private readonly DeviceInput input;
     public ToolDescriptor Descriptor { get; }
 
-    public SwipeDirectionTool(AdbHub adb)
+    public SwipeDirectionTool(AdbHub adb, AgentRegistry agents, DeviceInput input)
     {
         this.adb = adb;
+        this.agents = agents;
+        this.input = input;
         Descriptor = new ToolDescriptor
         {
             Name = "swipe_direction",
@@ -119,25 +123,25 @@ internal sealed class SwipeDirectionTool : IToolHandler
         };
     }
 
-    public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
+    public async Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
         string direction = Args.RequireString(arguments, "direction");
         int distPct = Math.Clamp(Args.OptionalInt(arguments, "distance_percent", ScrollGeometry.DefaultDistancePercent), 10, 95);
         int durationMs = Math.Max(50, Args.OptionalInt(arguments, "duration_ms", ScrollGeometry.DefaultDurationMs));
         DeviceData device = adb.RequireDevice(serial);
-        ScreenSize size = ScreenSize.Read(adb.Client, device);
+        AgentSession session = agents.EnsureStarted(serial);
+        ScreenSize size = await ScreenSize.ReadAsync(session, adb.Client, device).ConfigureAwait(false);
         (int x1, int y1, int x2, int y2) = ScrollGeometry.Compute(direction, distPct, size, container: null);
-        string command = string.Create(CultureInfo.InvariantCulture, $"input swipe {x1} {y1} {x2} {y2} {durationMs}");
-        ConsoleOutputReceiver receiver = new();
-        adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
-        return Task.FromResult(ToolCallResult.Json(new JsonObject
+        string via = await input.SwipeAsync(serial, x1, y1, x2, y2, durationMs).ConfigureAwait(false);
+        return ToolCallResult.Json(new JsonObject
         {
             ["ok"] = true,
             ["direction"] = direction,
             ["from"] = new JsonObject { ["x"] = x1, ["y"] = y1 },
-            ["to"] = new JsonObject { ["x"] = x2, ["y"] = y2 }
-        }));
+            ["to"] = new JsonObject { ["x"] = x2, ["y"] = y2 },
+            ["via"] = via
+        });
     }
 }
 
@@ -145,12 +149,14 @@ internal sealed class ScrollToEdgeTool : IToolHandler
 {
     private readonly AdbHub adb;
     private readonly AgentRegistry agents;
+    private readonly DeviceInput input;
     public ToolDescriptor Descriptor { get; }
 
-    public ScrollToEdgeTool(AdbHub adb, AgentRegistry agents)
+    public ScrollToEdgeTool(AdbHub adb, AgentRegistry agents, DeviceInput input)
     {
         this.adb = adb;
         this.agents = agents;
+        this.input = input;
         Descriptor = new ToolDescriptor
         {
             Name = "scroll_to_edge",
@@ -173,16 +179,14 @@ internal sealed class ScrollToEdgeTool : IToolHandler
         int durationMs = Math.Max(50, Args.OptionalInt(arguments, "duration_ms", ScrollGeometry.DefaultDurationMs));
         DeviceData device = adb.RequireDevice(serial);
         AgentSession session = agents.EnsureStarted(serial);
-        ScreenSize size = ScreenSize.Read(adb.Client, device);
         string xml = await session.Http.GetStringAsync("/hierarchy?compressed=false").ConfigureAwait(false);
+        ScreenSize size = await ScreenSize.ReadAsync(session, adb.Client, device, xml).ConfigureAwait(false);
         string prevFingerprint = HierarchyMatcher.Fingerprint(xml);
         int steps = 0;
         for (int i = 0; i < maxSteps; i++)
         {
             (int x1, int y1, int x2, int y2) = ScrollGeometry.Compute(direction, distPct, size, container: null);
-            string command = string.Create(CultureInfo.InvariantCulture, $"input swipe {x1} {y1} {x2} {y2} {durationMs}");
-            ConsoleOutputReceiver receiver = new();
-            adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
+            await input.SwipeAsync(serial, x1, y1, x2, y2, durationMs).ConfigureAwait(false);
             steps++;
             xml = await WaitStableAsync(session).ConfigureAwait(false);
             string post = HierarchyMatcher.Fingerprint(xml);
@@ -235,12 +239,14 @@ internal sealed class ScrollUntilVisibleTool : IToolHandler
 {
     private readonly AdbHub adb;
     private readonly AgentRegistry agents;
+    private readonly DeviceInput input;
     public ToolDescriptor Descriptor { get; }
 
-    public ScrollUntilVisibleTool(AdbHub adb, AgentRegistry agents)
+    public ScrollUntilVisibleTool(AdbHub adb, AgentRegistry agents, DeviceInput input)
     {
         this.adb = adb;
         this.agents = agents;
+        this.input = input;
         Descriptor = new ToolDescriptor
         {
             Name = "scroll_until_visible",
@@ -273,8 +279,8 @@ internal sealed class ScrollUntilVisibleTool : IToolHandler
         }
         DeviceData device = adb.RequireDevice(serial);
         AgentSession session = agents.EnsureStarted(serial);
-        ScreenSize size = ScreenSize.Read(adb.Client, device);
         string xml = await session.Http.GetStringAsync("/hierarchy?compressed=false").ConfigureAwait(false);
+        ScreenSize size = await ScreenSize.ReadAsync(session, adb.Client, device, xml).ConfigureAwait(false);
         UiNode? hit = HierarchyMatcher.FindFirst(xml, target);
         if (hit is not null)
         {
@@ -290,9 +296,7 @@ internal sealed class ScrollUntilVisibleTool : IToolHandler
         for (int i = 1; i <= maxScrolls; i++)
         {
             (int x1, int y1, int x2, int y2) = ScrollGeometry.Compute(direction, distPct, size, containerNode);
-            string command = string.Create(CultureInfo.InvariantCulture, $"input swipe {x1} {y1} {x2} {y2} {durationMs}");
-            ConsoleOutputReceiver receiver = new();
-            adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
+            await input.SwipeAsync(serial, x1, y1, x2, y2, durationMs).ConfigureAwait(false);
             xml = await ScrollToEdgeTool.WaitStableAsync(session).ConfigureAwait(false);
             hit = HierarchyMatcher.FindFirst(xml, target);
             if (hit is not null)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -131,13 +132,20 @@ internal sealed class AdbHub
     // AdvancedSharpAdbClient, which is ambiguous when two devices share a serial
     // ("more than one device"). Shell out to `adb -t <transport-id> forward` so
     // the forward binds to the exact transport.
-    public bool CreateForwardByTransportId(string transportId, int localPort, int remotePort)
-        => RunForward(transportId, new[] { $"tcp:{localPort}", $"tcp:{remotePort}" });
+    // tcp:0 makes the adb server pick a free host port and print it.
+    public int? CreateEphemeralForward(string transportId, int remotePort)
+    {
+        string? output = RunForward(transportId, new[] { "tcp:0", $"tcp:{remotePort}" });
+        return int.TryParse(output?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int port) && port > 0
+            ? port
+            : null;
+    }
 
     public void RemoveForwardByTransportId(string transportId, int localPort)
         => RunForward(transportId, new[] { "--remove", $"tcp:{localPort}" });
 
-    private bool RunForward(string transportId, string[] forwardArgs)
+    // Returns stdout on success, null on failure.
+    private string? RunForward(string transportId, string[] forwardArgs)
     {
         try
         {
@@ -158,23 +166,23 @@ internal sealed class AdbHub
             using Process? proc = Process.Start(psi);
             if (proc is null)
             {
-                return false;
+                return null;
             }
-            proc.StandardOutput.ReadToEnd();
+            string stdout = proc.StandardOutput.ReadToEnd();
             proc.StandardError.ReadToEnd();
             if (!proc.WaitForExit(8000))
             {
                 try
                 { proc.Kill(true); }
                 catch { }
-                return false;
+                return null;
             }
-            return proc.ExitCode == 0;
+            return proc.ExitCode == 0 ? stdout : null;
         }
         catch (Exception ex)
         {
             Log.Debug($"adb -t {transportId} forward failed: {ex.Message}");
-            return false;
+            return null;
         }
     }
 

@@ -66,13 +66,13 @@ On Linux the command is `/home/<you>/.local/share/android-mcp/android-mcp`.
 | Name                  | Purpose                                            |
 |-----------------------|----------------------------------------------------|
 | `list_devices`        | enumerate devices visible to adb                   |
-| `screenshot`          | PNG via on-device agent                            |
+| `screenshot`          | JPEG (or PNG) via on-device agent, optional scale  |
 | `dump_hierarchy`      | XML / lean JSON view tree                          |
 | `device_info`         | device info                                        |
 | `click`               | tap (x, y)                                         |
 | `long_press`          | hold (x, y) for `duration_ms`                      |
 | `swipe`               | swipe with duration                                |
-| `input_text`          | type ASCII into focused field                      |
+| `input_text`          | type text (any Unicode) into focused field         |
 | `key_event`           | KEYCODE by name or number                          |
 | `shell`               | arbitrary `adb shell` (60 s timeout)               |
 | `push_file`           | host -> device file copy                           |

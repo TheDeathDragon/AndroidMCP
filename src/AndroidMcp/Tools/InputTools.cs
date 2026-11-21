@@ -1,11 +1,5 @@
-using System;
-using System.Globalization;
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using AdvancedSharpAdbClient;
-using AdvancedSharpAdbClient.Models;
-using AdvancedSharpAdbClient.Receivers;
 using AndroidMcp.Adb;
 using AndroidMcp.Mcp;
 
@@ -13,12 +7,12 @@ namespace AndroidMcp.Tools;
 
 internal sealed class InputClickTool : IToolHandler
 {
-    private readonly AdbHub adb;
+    private readonly DeviceInput input;
     public ToolDescriptor Descriptor { get; }
 
-    public InputClickTool(AdbHub adb)
+    public InputClickTool(DeviceInput input)
     {
-        this.adb = adb;
+        this.input = input;
         Descriptor = new ToolDescriptor
         {
             Name = "click",
@@ -30,27 +24,24 @@ internal sealed class InputClickTool : IToolHandler
         };
     }
 
-    public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
+    public async Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
         int x = Args.RequireInt(arguments, "x");
         int y = Args.RequireInt(arguments, "y");
-        DeviceData device = adb.RequireDevice(serial);
-        string command = string.Create(CultureInfo.InvariantCulture, $"input tap {x} {y}");
-        ConsoleOutputReceiver receiver = new();
-        adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
-        return Task.FromResult(ToolCallResult.Json(new JsonObject { ["ok"] = true, ["x"] = x, ["y"] = y }));
+        string via = await input.TapAsync(serial, x, y).ConfigureAwait(false);
+        return ToolCallResult.Json(new JsonObject { ["ok"] = true, ["x"] = x, ["y"] = y, ["via"] = via });
     }
 }
 
 internal sealed class InputSwipeTool : IToolHandler
 {
-    private readonly AdbHub adb;
+    private readonly DeviceInput input;
     public ToolDescriptor Descriptor { get; }
 
-    public InputSwipeTool(AdbHub adb)
+    public InputSwipeTool(DeviceInput input)
     {
-        this.adb = adb;
+        this.input = input;
         Descriptor = new ToolDescriptor
         {
             Name = "swipe",
@@ -65,7 +56,7 @@ internal sealed class InputSwipeTool : IToolHandler
         };
     }
 
-    public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
+    public async Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
         int x1 = Args.RequireInt(arguments, "x1");
@@ -73,134 +64,70 @@ internal sealed class InputSwipeTool : IToolHandler
         int x2 = Args.RequireInt(arguments, "x2");
         int y2 = Args.RequireInt(arguments, "y2");
         int durationMs = Args.OptionalInt(arguments, "duration_ms", 300);
-        DeviceData device = adb.RequireDevice(serial);
-        string command = string.Create(CultureInfo.InvariantCulture,
-            $"input swipe {x1} {y1} {x2} {y2} {durationMs}");
-        ConsoleOutputReceiver receiver = new();
-        adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
-        return Task.FromResult(ToolCallResult.Json(new JsonObject
+        string via = await input.SwipeAsync(serial, x1, y1, x2, y2, durationMs).ConfigureAwait(false);
+        return ToolCallResult.Json(new JsonObject
         {
             ["ok"] = true,
             ["x1"] = x1,
             ["y1"] = y1,
             ["x2"] = x2,
             ["y2"] = y2,
-            ["durationMs"] = durationMs
-        }));
+            ["durationMs"] = durationMs,
+            ["via"] = via
+        });
     }
 }
 
 internal sealed class InputTextTool : IToolHandler
 {
-    private readonly AdbHub adb;
+    private readonly DeviceInput input;
     public ToolDescriptor Descriptor { get; }
 
-    public InputTextTool(AdbHub adb)
+    public InputTextTool(DeviceInput input)
     {
-        this.adb = adb;
+        this.input = input;
         Descriptor = new ToolDescriptor
         {
             Name = "input_text",
-            Description = "Type literal text into the focused field via `adb shell input text`. ASCII only — for non-ASCII (CJK, emoji), use the clipboard route in a follow-up shell call.",
+            Description = "Type text into the focused field. Any Unicode (CJK, emoji) works through the on-device agent; non-ASCII text that the keymap cannot type is appended to the focused editable field.",
             InputSchema = Schema.Object(
                 ("serial", Schema.String(Schema.SerialDescription), true),
                 ("text", Schema.String("text to type"), true))
         };
     }
 
-    public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
+    public async Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
         string text = Args.RequireString(arguments, "text");
-        DeviceData device = adb.RequireDevice(serial);
-        string escaped = EscapeForInputText(text);
-        string command = $"input text {escaped}";
-        ConsoleOutputReceiver receiver = new();
-        adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
-        return Task.FromResult(ToolCallResult.Json(new JsonObject { ["ok"] = true, ["text"] = text }));
-    }
-
-    private static string EscapeForInputText(string text)
-    {
-        StringBuilder sb = new(text.Length + 4);
-        foreach (char c in text)
-        {
-            switch (c)
-            {
-                case ' ':
-                    sb.Append("%s");
-                    break;
-                case '\'':
-                    sb.Append("\\'");
-                    break;
-                case '"':
-                    sb.Append("\\\"");
-                    break;
-                case '\\':
-                    sb.Append("\\\\");
-                    break;
-                case '`':
-                    sb.Append("\\`");
-                    break;
-                case '$':
-                    sb.Append("\\$");
-                    break;
-                case '&':
-                    sb.Append("\\&");
-                    break;
-                case '|':
-                    sb.Append("\\|");
-                    break;
-                case ';':
-                    sb.Append("\\;");
-                    break;
-                case '(':
-                    sb.Append("\\(");
-                    break;
-                case ')':
-                    sb.Append("\\)");
-                    break;
-                case '<':
-                    sb.Append("\\<");
-                    break;
-                case '>':
-                    sb.Append("\\>");
-                    break;
-                default:
-                    sb.Append(c);
-                    break;
-            }
-        }
-        return sb.ToString();
+        string via = await input.TextAsync(serial, text).ConfigureAwait(false);
+        return ToolCallResult.Json(new JsonObject { ["ok"] = true, ["text"] = text, ["via"] = via });
     }
 }
 
 internal sealed class KeyEventTool : IToolHandler
 {
-    private readonly AdbHub adb;
+    private readonly DeviceInput input;
     public ToolDescriptor Descriptor { get; }
 
-    public KeyEventTool(AdbHub adb)
+    public KeyEventTool(DeviceInput input)
     {
-        this.adb = adb;
+        this.input = input;
         Descriptor = new ToolDescriptor
         {
             Name = "key_event",
-            Description = "Send a single Android keycode via `adb shell input keyevent`. Accepts symbolic names (BACK, HOME, MENU, ENTER, VOLUME_UP, VOLUME_DOWN, POWER, etc.) or numeric KeyEvent codes.",
+            Description = "Send a single Android keycode. Accepts symbolic names (BACK, HOME, MENU, ENTER, VOLUME_UP, VOLUME_DOWN, POWER, etc.) or numeric KeyEvent codes.",
             InputSchema = Schema.Object(
                 ("serial", Schema.String(Schema.SerialDescription), true),
                 ("key", Schema.String("Android keycode name or number, e.g. BACK / HOME / 4 / 26"), true))
         };
     }
 
-    public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
+    public async Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
         string key = Args.RequireString(arguments, "key");
-        DeviceData device = adb.RequireDevice(serial);
-        string command = $"input keyevent {key}";
-        ConsoleOutputReceiver receiver = new();
-        adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
-        return Task.FromResult(ToolCallResult.Json(new JsonObject { ["ok"] = true, ["key"] = key }));
+        string via = await input.KeyAsync(serial, key).ConfigureAwait(false);
+        return ToolCallResult.Json(new JsonObject { ["ok"] = true, ["key"] = key, ["via"] = via });
     }
 }

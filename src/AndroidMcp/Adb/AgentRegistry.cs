@@ -9,13 +9,11 @@ namespace AndroidMcp.Adb;
 internal sealed class AgentRegistry : IDisposable
 {
     private readonly AdbHub adbHub;
-    private readonly PortAllocator portAllocator;
     private readonly ConcurrentDictionary<string, AgentSession> sessions = new();
 
-    public AgentRegistry(AdbHub adbHub, PortAllocator portAllocator)
+    public AgentRegistry(AdbHub adbHub)
     {
         this.adbHub = adbHub;
-        this.portAllocator = portAllocator;
     }
 
     // Sessions are keyed by transport-id, not serial: two devices can report
@@ -32,14 +30,8 @@ internal sealed class AgentRegistry : IDisposable
         string transportId = device.TransportId;
         return sessions.GetOrAdd(transportId, tid =>
         {
-            int? port = portAllocator.TryAllocate();
-            if (port is null)
-            {
-                throw new InvalidOperationException(
-                    "agent port pool exhausted (9601-9699); release some sessions first");
-            }
-            Log.Info($"creating agent session for {device.Serial} (transport {tid}) on port {port}");
-            return new AgentSession(adbHub, tid, port.Value);
+            Log.Info($"creating agent session for {device.Serial} (transport {tid})");
+            return new AgentSession(adbHub, tid);
         });
     }
 
@@ -49,7 +41,7 @@ internal sealed class AgentRegistry : IDisposable
         if (!session.EnsureStarted())
         {
             throw new InvalidOperationException(
-                $"failed to start agent for transport {session.TransportId} on port {session.Port}");
+                $"failed to start agent for transport {session.TransportId}");
         }
         return session;
     }
@@ -69,7 +61,6 @@ internal sealed class AgentRegistry : IDisposable
         try
         { session.Dispose(); }
         catch { }
-        portAllocator.Release(session.Port);
         return true;
     }
 
@@ -80,7 +71,6 @@ internal sealed class AgentRegistry : IDisposable
             try
             { kv.Value.Dispose(); }
             catch { }
-            portAllocator.Release(kv.Value.Port);
         }
         sessions.Clear();
     }

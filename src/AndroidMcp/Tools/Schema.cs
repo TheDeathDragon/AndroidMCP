@@ -37,6 +37,9 @@ internal static class Schema
     public static JsonObject Integer(string description) =>
         new() { ["type"] = "integer", ["description"] = description };
 
+    public static JsonObject Number(string description) =>
+        new() { ["type"] = "number", ["description"] = description };
+
     public static JsonObject Boolean(string description) =>
         new() { ["type"] = "boolean", ["description"] = description };
 

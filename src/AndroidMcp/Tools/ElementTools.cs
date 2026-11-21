@@ -1,13 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
-using AdvancedSharpAdbClient;
-using AdvancedSharpAdbClient.Models;
-using AdvancedSharpAdbClient.Receivers;
 using AndroidMcp.Adb;
 using AndroidMcp.Mcp;
 
@@ -56,14 +51,14 @@ internal sealed class FindElementTool : IToolHandler
 
 internal sealed class TapElementTool : IToolHandler
 {
-    private readonly AdbHub adb;
     private readonly AgentRegistry agents;
+    private readonly DeviceInput input;
     public ToolDescriptor Descriptor { get; }
 
-    public TapElementTool(AdbHub adb, AgentRegistry agents)
+    public TapElementTool(AgentRegistry agents, DeviceInput input)
     {
-        this.adb = adb;
         this.agents = agents;
+        this.input = input;
         Descriptor = new ToolDescriptor
         {
             Name = "tap_element",
@@ -99,15 +94,13 @@ internal sealed class TapElementTool : IToolHandler
             return ToolCallResult.Error($"index {index} out of range (0..{all.Count - 1})");
         }
         UiNode hit = all[index];
-        DeviceData device = adb.RequireDevice(serial);
-        string command = string.Create(CultureInfo.InvariantCulture, $"input tap {hit.CenterX} {hit.CenterY}");
-        ConsoleOutputReceiver receiver = new();
-        adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
+        string via = await input.TapAsync(serial, hit.CenterX, hit.CenterY).ConfigureAwait(false);
         return ToolCallResult.Json(new JsonObject
         {
             ["ok"] = true,
             ["matched"] = all.Count,
-            ["tapped"] = SelectorSchema.Encode(hit)
+            ["tapped"] = SelectorSchema.Encode(hit),
+            ["via"] = via
         });
     }
 }

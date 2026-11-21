@@ -13,13 +13,13 @@ namespace AndroidMcp.Tools;
 
 internal abstract class KeyShortcutTool : IToolHandler
 {
-    private readonly AdbHub adb;
+    private readonly DeviceInput input;
     private readonly string keycode;
     public ToolDescriptor Descriptor { get; }
 
-    protected KeyShortcutTool(AdbHub adb, string name, string keycode, string description)
+    protected KeyShortcutTool(DeviceInput input, string name, string keycode, string description)
     {
-        this.adb = adb;
+        this.input = input;
         this.keycode = keycode;
         Descriptor = new ToolDescriptor
         {
@@ -30,33 +30,31 @@ internal abstract class KeyShortcutTool : IToolHandler
         };
     }
 
-    public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
+    public async Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
-        DeviceData device = adb.RequireDevice(serial);
-        ConsoleOutputReceiver receiver = new();
-        adb.Client.ExecuteRemoteCommand($"input keyevent {keycode}", device, receiver, Encoding.UTF8);
-        return Task.FromResult(ToolCallResult.Json(new JsonObject { ["ok"] = true, ["key"] = keycode }));
+        string via = await input.KeyAsync(serial, keycode).ConfigureAwait(false);
+        return ToolCallResult.Json(new JsonObject { ["ok"] = true, ["key"] = keycode, ["via"] = via });
     }
 }
 
 internal sealed class PressHomeTool : KeyShortcutTool
 {
-    public PressHomeTool(AdbHub adb) : base(adb, "press_home", "HOME",
+    public PressHomeTool(DeviceInput input) : base(input, "press_home", "HOME",
         "Send HOME keyevent — return to launcher. Convenience wrapper around `key_event` with KEYCODE_HOME.")
     { }
 }
 
 internal sealed class PressBackTool : KeyShortcutTool
 {
-    public PressBackTool(AdbHub adb) : base(adb, "press_back", "BACK",
+    public PressBackTool(DeviceInput input) : base(input, "press_back", "BACK",
         "Send BACK keyevent — go back one navigation step. Convenience wrapper.")
     { }
 }
 
 internal sealed class PressRecentsTool : KeyShortcutTool
 {
-    public PressRecentsTool(AdbHub adb) : base(adb, "press_recents", "APP_SWITCH",
+    public PressRecentsTool(DeviceInput input) : base(input, "press_recents", "APP_SWITCH",
         "Send APP_SWITCH keyevent — open the recent-tasks overview. Convenience wrapper.")
     { }
 }

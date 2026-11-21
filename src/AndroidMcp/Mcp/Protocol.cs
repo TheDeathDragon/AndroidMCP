@@ -65,9 +65,9 @@ internal sealed class ToolCallResult
         Content = { new ToolContent { Type = "text", Text = payload.ToJsonString(JsonOpts.Default) } }
     };
 
-    public static ToolCallResult Image(string base64Png) => new()
+    public static ToolCallResult Image(string base64, string mimeType) => new()
     {
-        Content = { new ToolContent { Type = "image", Data = base64Png, MimeType = "image/png" } }
+        Content = { new ToolContent { Type = "image", Data = base64, MimeType = mimeType } }
     };
 
     public static ToolCallResult Error(string message) => new()
@@ -104,7 +104,7 @@ internal static class ServerInstructions
 
         3. Hierarchy vs screenshot:
            - `dump_hierarchy` returns compact JSON by default (`format=lean`), ~5× smaller than the raw XML. Pass `format=xml` only when you need the full attribute set; `interactive_only=true` further drops pure layout containers.
-           - `screenshot` consumes vision tokens (~1.5k @ 720p, ~3.5k @ 1080p). Use it for VISUAL verification (animations, charts, custom-rendered UIs), not for extracting text — `find_element` is far cheaper.
+           - `screenshot` consumes vision tokens (~1.5k @ 720p, ~3.5k @ 1080p). Use it for VISUAL verification (animations, charts, custom-rendered UIs), not for extracting text — `find_element` is far cheaper. Pass `scale=0.5` when full resolution is not needed; it cuts vision tokens about 4×.
 
         4. Prefer composed tools over manual loops:
            - `tap_element` (selector → tap) instead of `dump_hierarchy` + `click`.

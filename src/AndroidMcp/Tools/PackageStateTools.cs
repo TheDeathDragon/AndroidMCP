@@ -32,7 +32,7 @@ internal sealed class ClearAppDataTool : IToolHandler
     public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
-        string packageName = Args.RequireString(arguments, "package");
+        string packageName = Args.RequirePackage(arguments);
         DeviceData device = adb.RequireDevice(serial);
         ConsoleOutputReceiver receiver = new();
         adb.Client.ExecuteRemoteCommand($"pm clear {packageName}", device, receiver, Encoding.UTF8);
@@ -69,7 +69,7 @@ internal sealed class SetPackageEnabledTool : IToolHandler
     public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
-        string packageName = Args.RequireString(arguments, "package");
+        string packageName = Args.RequirePackage(arguments);
         bool enabled = arguments["enabled"]?.GetValue<bool>()
             ?? throw new McpInvalidParamsException("missing 'enabled'");
         DeviceData device = adb.RequireDevice(serial);
@@ -109,7 +109,7 @@ internal sealed class GetPackageInfoTool : IToolHandler
     public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
-        string packageName = Args.RequireString(arguments, "package");
+        string packageName = Args.RequirePackage(arguments);
         DeviceData device = adb.RequireDevice(serial);
         ConsoleOutputReceiver receiver = new();
         adb.Client.ExecuteRemoteCommand($"dumpsys package {packageName}", device, receiver, Encoding.UTF8);

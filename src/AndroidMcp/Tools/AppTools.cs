@@ -49,27 +49,43 @@ internal sealed class LaunchAppTool : IToolHandler
         Descriptor = new ToolDescriptor
         {
             Name = "launch_app",
-            Description = "Launch an app by package name. Uses `monkey -p <pkg> 1` which resolves the launcher activity automatically — works whether or not you know the entry component.",
+            Description = "Launch an app by package name: resolves its launcher activity and starts it the way the home screen does (an already running app comes back to the front).",
             InputSchema = Schema.Object(
                 ("serial", Schema.String(Schema.SerialDescription), true),
                 ("package", Schema.String("Android package name, e.g. com.android.settings"), true))
         };
     }
 
+    // `monkey -p <pkg> 1` spends ~3 s starting its own runtime; resolving the launcher
+    // activity and `am start`-ing it takes ~0.4 s. Flags 0x10200000 are the launcher's
+    // NEW_TASK | RESET_TASK_IF_NEEDED, so a running app resumes instead of stacking.
     public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
-        string packageName = Args.RequireString(arguments, "package");
+        string packageName = Args.RequirePackage(arguments);
         DeviceData device = adb.RequireDevice(serial);
-        string command = $"monkey -p {packageName} -c android.intent.category.LAUNCHER 1";
+        const string launcherIntent = "-a android.intent.action.MAIN -c android.intent.category.LAUNCHER";
+        string command =
+            $"c=$(cmd package query-activities --brief {launcherIntent} {packageName} | grep / | head -n 1 | tr -d ' '); " +
+            $"if [ -n \"$c\" ]; then echo \"component=$c\"; am start {launcherIntent} -f 0x10200000 -n \"$c\"; " +
+            $"else echo 'Error: no launcher activity in {packageName}'; fi";
         ConsoleOutputReceiver receiver = new();
         adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
-        string output = receiver.ToString() ?? string.Empty;
-        bool ok = !output.Contains("No activities found", System.StringComparison.Ordinal);
+        string output = (receiver.ToString() ?? string.Empty).Trim();
+        string? component = null;
+        foreach (string line in output.Split('\n'))
+        {
+            if (line.StartsWith("component=", System.StringComparison.Ordinal))
+            {
+                component = line["component=".Length..].Trim();
+            }
+        }
+        bool ok = component is not null && !output.Contains("Error", System.StringComparison.Ordinal);
         return Task.FromResult(ToolCallResult.Json(new JsonObject
         {
             ["ok"] = ok,
             ["package"] = packageName,
+            ["component"] = component,
             ["output"] = output
         }));
     }
@@ -96,7 +112,7 @@ internal sealed class StopAppTool : IToolHandler
     public Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
-        string packageName = Args.RequireString(arguments, "package");
+        string packageName = Args.RequirePackage(arguments);
         DeviceData device = adb.RequireDevice(serial);
         ConsoleOutputReceiver receiver = new();
         adb.Client.ExecuteRemoteCommand($"am force-stop {packageName}", device, receiver, Encoding.UTF8);

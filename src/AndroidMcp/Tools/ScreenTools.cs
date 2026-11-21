@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Net.Http;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -18,22 +19,35 @@ internal sealed class ScreenshotTool : IToolHandler
         Descriptor = new ToolDescriptor
         {
             Name = "screenshot",
-            Description = "Capture the current screen via the on-device agent (UiAutomation API — much faster than `adb shell screencap`). Returns a PNG image content block.",
+            Description = "Capture the current screen via the on-device agent as JPEG (faster than PNG and about a tenth of its size). Vision tokens scale with pixel count, so pass `scale` (e.g. 0.5) when full resolution is not needed; `format=png` for lossless.",
             InputSchema = Schema.Object(
                 ("serial", Schema.String(Schema.SerialDescription), true),
-                ("quality", Schema.Integer("PNG quality 1..100, default 100. Lower values shrink the image; 70 is a sane default for LLM consumption."), false))
+                ("format", Schema.Enum("image format, default jpeg", "jpeg", "png"), false),
+                ("scale", Schema.Number("downscale factor 0.1..1.0, default 1.0"), false),
+                ("quality", Schema.Integer("JPEG quality 1..100, default 80; ignored for png"), false))
         };
     }
 
     public async Task<ToolCallResult> InvokeAsync(JsonObject arguments)
     {
         string serial = Args.RequireSerial(arguments);
-        int quality = Args.OptionalInt(arguments, "quality", 100);
+        string format = Args.OptionalString(arguments, "format") ?? "jpeg";
+        if (format is not ("png" or "jpeg"))
+        {
+            throw new McpInvalidParamsException("format must be png or jpeg");
+        }
+        double scale = Math.Clamp(Args.OptionalDouble(arguments, "scale", 1.0), 0.1, 1.0);
+        int quality = Math.Clamp(Args.OptionalInt(arguments, "quality", 80), 1, 100);
         AgentSession session = agents.EnsureStarted(serial);
-        string url = quality != 100 ? $"/screenshot?quality={quality}" : "/screenshot";
-        byte[] png = await session.Http.GetByteArrayAsync(url).ConfigureAwait(false);
-        string base64 = Convert.ToBase64String(png);
-        return ToolCallResult.Image(base64);
+        string url = format == "jpeg"
+            ? string.Create(CultureInfo.InvariantCulture, $"/screenshot?format=jpeg&quality={quality}&scale={scale}")
+            : string.Create(CultureInfo.InvariantCulture, $"/screenshot?scale={scale}");
+        using HttpResponseMessage resp = await session.Http.GetAsync(url).ConfigureAwait(false);
+        resp.EnsureSuccessStatusCode();
+        byte[] image = await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+        // Agents that predate format/scale ignore them and still answer PNG.
+        string mimeType = resp.Content.Headers.ContentType?.MediaType ?? "image/png";
+        return ToolCallResult.Image(Convert.ToBase64String(image), mimeType);
     }
 }
 

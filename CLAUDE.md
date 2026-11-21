@@ -60,10 +60,22 @@ scripts/                    # install / publish / smoke / extract_changelog
 - **Transport**: stdio (default) or HTTP+SSE on loopback.
 - **Multi-device**: every tool except `list_devices` requires `serial`. No
   active-device state. `AgentRegistry` lazily creates one `AgentSession`
-  per serial; each session gets a host port from `PortAllocator` (9601-9699).
+  per transport-id. Each (re)start forwards `tcp:0` -> device `tcp:9500`, so
+  the adb server assigns the host port; never use a fixed host port, since
+  `adb forward` is global and the last forwarder silently wins.
 - **Agent reuse**: `AgentSession.TryReuseCanonicalAgent` first probes
-  `tcp:9500` (`UiAutomation` is a per-device singleton). If a healthy agent
-  already runs there, MCP forwards instead of pushing its own jar.
+  device `tcp:9500` (`UiAutomation` is a per-device singleton). If a healthy
+  agent already runs there, MCP reuses it instead of pushing its own jar,
+  unless it lacks `/input` and runs android-mcp's own jar path (an outdated
+  orphan), which is replaced. Agents other tools launched are never killed.
+- **Input**: `Adb/DeviceInput` injects via the agent's `/input/*`. Shell
+  `input` is the fallback only when the agent can't start or returns 404;
+  any other failure errors (a replay could double a gesture). Swipes use
+  `easing=linear` to match `input swipe`'s fling; batched sync `move` steps
+  stretch the gesture.
+- **Latency**: the agent writes one atrace section per request
+  (`agent /path`); record with `atrace_apps: "app_process"` to see device-side
+  time per endpoint.
 - **Selector matching**: `HierarchyMatcher.FindAll` walks the agent's
   accessibility XML. AT-tuned constants live in
   `ScrollTools.ScrollGeometry` (40 px edge inset, 60 % default span,

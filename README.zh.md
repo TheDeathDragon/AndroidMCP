@@ -66,13 +66,13 @@ Linux 下 command 换成 `/home/<你>/.local/share/android-mcp/android-mcp`。
 | 名称                   | 用途                                                 |
 | ---------------------- | ---------------------------------------------------- |
 | `list_devices`         | 枚举 adb 可见设备                                    |
-| `screenshot`           | 端上 agent 截屏 PNG                                  |
+| `screenshot`           | 端上 agent 截屏 JPEG（或 PNG），可缩放                 |
 | `dump_hierarchy`       | XML 控件树                                           |
 | `device_info`          | 设备信息                                             |
 | `click`                | 单击 (x, y)                                          |
 | `long_press`           | 按住 (x, y) `duration_ms` 毫秒                       |
 | `swipe`                | 带持续时间的滑动                                     |
-| `input_text`           | 向焦点字段输入 ASCII                                 |
+| `input_text`           | 向焦点字段输入文本（支持任意 Unicode）               |
 | `key_event`            | KEYCODE 名称或数值                                   |
 | `shell`                | 任意 `adb shell`（60 秒超时）                        |
 | `push_file`            | host -> device 文件复制                              |

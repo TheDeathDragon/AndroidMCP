@@ -17,14 +17,14 @@ internal sealed class AgentSession : IDisposable
     private const string AgentRemotePath = "/data/local/tmp/android-mcp-agent.jar";
     private const int CanonicalAgentPort = 9500;
     private const int HealthTimeoutMs = 10_000;
-    private const int HealthIntervalMs = 200;
+    private const int HealthIntervalMs = 50;
     private static readonly string AgentLocalPath = Path.Combine(
         AppContext.BaseDirectory, "tools", "agent-server.jar");
 
     private readonly AdbHub adbHub;
     private readonly string transportId;
-    private readonly int localPort;
-    private readonly HttpClient http;
+    private int localPort;
+    private volatile HttpClient http;
     private readonly object startGate = new();
     private volatile bool started;
     private int remotePort;
@@ -36,24 +36,40 @@ internal sealed class AgentSession : IDisposable
     public bool ReusingExistingAgent => started && !weLaunched;
     public bool IsStarted => started;
     public HttpClient Http => http;
+    public bool InputEndpointsMissing { get; set; }
 
-    public AgentSession(AdbHub adbHub, string transportId, int localPort)
+    public AgentSession(AdbHub adbHub, string transportId)
     {
         this.adbHub = adbHub;
         this.transportId = transportId;
-        this.localPort = localPort;
-        // Pool retain-window races with the agent's Connection: close, surfacing
-        // as "error sending request" on the first call after a quiet period.
+        http = CreateHttpClient(0);
+    }
+
+    // Idle timeout stays under the agent's 15 s keep-alive so the client never reuses a
+    // socket the agent is closing, yet spans the usual gap between an LLM's tool calls. Agents older than keep-alive answer
+    // Connection: close, which the handler honours by not pooling. The connection cap
+    // leaves room in the agent's 16 keep-alive sockets for other hosts sharing :9500.
+    private static HttpClient CreateHttpClient(int port)
+    {
         SocketsHttpHandler handler = new()
         {
-            PooledConnectionLifetime = TimeSpan.Zero,
-            PooledConnectionIdleTimeout = TimeSpan.Zero
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(10),
+            MaxConnectionsPerServer = 4
         };
-        http = new HttpClient(handler, disposeHandler: true)
+        return new HttpClient(handler, disposeHandler: true)
         {
-            BaseAddress = new Uri($"http://127.0.0.1:{localPort}"),
+            BaseAddress = new Uri($"http://127.0.0.1:{port}"),
             Timeout = TimeSpan.FromSeconds(30)
         };
+    }
+
+    // Pooled sockets ride the old adb forward and the old agent process; after a
+    // restart they would tunnel to a dead or different agent.
+    private void ResetHttpClient()
+    {
+        HttpClient old = http;
+        http = CreateHttpClient(localPort);
+        old.Dispose();
     }
 
     public bool EnsureStarted()
@@ -71,6 +87,7 @@ internal sealed class AgentSession : IDisposable
             }
 
             started = false;
+            InputEndpointsMissing = false;
             return Start();
         }
     }
@@ -79,6 +96,18 @@ internal sealed class AgentSession : IDisposable
     {
         DeviceData device = adbHub.RequireDeviceByTransportId(transportId);
         AdbClient client = adbHub.Client;
+        // `adb forward` is global to the adb server: a fixed host port is silently taken over
+        // by whichever process (another android-mcp, AndroidTest, a CLI) forwards it last, and
+        // requests then reach another phone. tcp:0 lets the adb server hand out a free port.
+        RemoveForward();
+        int? port = adbHub.CreateEphemeralForward(transportId, CanonicalAgentPort);
+        if (port is null)
+        {
+            Log.Error($"adb forward failed on transport {transportId}");
+            return false;
+        }
+        localPort = port.Value;
+        ResetHttpClient();
         if (TryReuseCanonicalAgent(client, device))
         {
             return true;
@@ -92,14 +121,16 @@ internal sealed class AgentSession : IDisposable
     // UiAutomation.connect — detect it and forward to the existing one.
     private bool TryReuseCanonicalAgent(AdbClient client, DeviceData device)
     {
-        if (!adbHub.CreateForwardByTransportId(transportId, localPort, CanonicalAgentPort))
-        {
-            Log.Debug($"forward probe failed on transport {transportId}");
-            return false;
-        }
         if (!CheckHealth())
         {
-            adbHub.RemoveForwardByTransportId(transportId, localPort);
+            return false;
+        }
+        // An outdated agent pushed by an older android-mcp (orphaned by a crash, or a second
+        // install still running) would otherwise be reused forever, pinning input to the shell
+        // fallback. Replace only our own jar; an agent another tool launched stays untouched.
+        if (!HasInputEndpoints() && IsOwnAgentJar(client, device))
+        {
+            Log.Info($"replacing outdated android-mcp agent on transport {transportId}");
             return false;
         }
         remotePort = CanonicalAgentPort;
@@ -107,6 +138,39 @@ internal sealed class AgentSession : IDisposable
         started = true;
         Log.Info($"agent reused on transport {transportId}: forward {localPort} -> :{CanonicalAgentPort}");
         return true;
+    }
+
+    // /input/tap without coordinates is a 400 on agents that have it and a 404 on older ones;
+    // it injects nothing either way.
+    private bool HasInputEndpoints()
+    {
+        try
+        {
+            using CancellationTokenSource cts = new(2000);
+            using HttpResponseMessage resp = http.GetAsync("/input/tap", cts.Token).GetAwaiter().GetResult();
+            return resp.StatusCode != System.Net.HttpStatusCode.NotFound;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    private static bool IsOwnAgentJar(AdbClient client, DeviceData device)
+    {
+        try
+        {
+            ConsoleOutputReceiver receiver = new();
+            client.ExecuteRemoteCommand(
+                $"for p in $(pgrep -f 'la.shiro.agent.Server --port {CanonicalAgentPort}'); do " +
+                $"grep -q '{AgentRemotePath}' /proc/$p/environ 2>/dev/null && echo own; done",
+                device, receiver, Encoding.UTF8);
+            return receiver.ToString().Contains("own", StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private bool LaunchOwnAgent(AdbClient client, DeviceData device)
@@ -134,21 +198,19 @@ internal sealed class AgentSession : IDisposable
             Thread.Sleep(150);
             LaunchServerProcess(client, device, CanonicalAgentPort);
             long t3 = Stopwatch.GetTimestamp();
-            adbHub.CreateForwardByTransportId(transportId, localPort, CanonicalAgentPort);
-            long t4 = Stopwatch.GetTimestamp();
             if (!WaitForHealth())
             {
                 return false;
             }
 
-            long t5 = Stopwatch.GetTimestamp();
+            long t4 = Stopwatch.GetTimestamp();
             remotePort = CanonicalAgentPort;
             weLaunched = true;
             started = true;
             Log.Info(
                 $"agent launched on transport {transportId}: forward {localPort} -> :{CanonicalAgentPort} " +
                 $"[push {Ms(t0, t1):0}ms kill {Ms(t1, t2):0}ms launch {Ms(t2, t3):0}ms " +
-                $"forward {Ms(t3, t4):0}ms health {Ms(t4, t5):0}ms]");
+                $"health {Ms(t3, t4):0}ms]");
             return true;
         }
         catch (Exception ex)
@@ -272,6 +334,15 @@ internal sealed class AgentSession : IDisposable
             {
             }
         }
+        RemoveForward();
+    }
+
+    private void RemoveForward()
+    {
+        if (localPort == 0)
+        {
+            return;
+        }
         try
         {
             adbHub.RemoveForwardByTransportId(transportId, localPort);
@@ -279,6 +350,7 @@ internal sealed class AgentSession : IDisposable
         catch
         {
         }
+        localPort = 0;
     }
 
     public void Dispose()
