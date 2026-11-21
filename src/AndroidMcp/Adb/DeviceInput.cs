@@ -20,7 +20,7 @@ internal sealed class DeviceInput
 {
     public const string ViaAgent = "agent";
     public const string ViaShell = "shell";
-    private static readonly Regex KeyNameRegex = new("^[A-Za-z0-9_]{1,64}$", RegexOptions.Compiled);
+    private static readonly Regex KeyNameRegex = new(@"^[A-Za-z0-9_]{1,64}\z", RegexOptions.Compiled);
     // Gestures must finish well inside the 30 s HTTP timeout: a request that times out while
     // the agent is still holding the pointer reports failure for a gesture that lands.
     public const int MaxGestureMs = 10_000;
@@ -73,7 +73,7 @@ internal sealed class DeviceInput
     // never need anything beyond [A-Za-z0-9_].
     public Task<string> KeyAsync(string serial, string key)
     {
-        if (!KeyNameRegex.IsMatch(key))
+        if (!IsValidKeyName(key))
         {
             throw new InvalidOperationException($"invalid key '{key}': use a keycode name (BACK, KEYCODE_HOME) or number");
         }
@@ -170,6 +170,8 @@ internal sealed class DeviceInput
     }
 
     private static string Inv(FormattableString s) => s.ToString(CultureInfo.InvariantCulture);
+
+    internal static bool IsValidKeyName(string key) => KeyNameRegex.IsMatch(key);
 
     internal static bool IsAscii(string text)
     {

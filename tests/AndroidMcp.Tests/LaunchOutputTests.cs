@@ -20,6 +20,9 @@ public class LaunchOutputTests
         (bool ok, _) = LaunchAppTool.ParseLaunchOutput(
             "component=com.x/.ErrorActivity\nStarting: Intent { cmp=com.x/.ErrorActivity }\nrc=0");
         Assert.True(ok);
+        (bool ok2, _) = LaunchAppTool.ParseLaunchOutput(
+            "component=com.x/.ExceptionViewer\nStarting: Intent { cmp=com.x/.ExceptionViewer }\nrc=0");
+        Assert.True(ok2);
     }
 
     [Theory]

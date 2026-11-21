@@ -98,6 +98,8 @@ internal static class Args
         return name;
     }
 
+    // \z, not $: .NET's $ also matches before a trailing newline, and a newline in a shell
+    // string starts a new command. Single-segment names are legal ("android").
     private static readonly Regex PackageNameRegex = new(
-        @"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$", RegexOptions.Compiled);
+        @"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*\z", RegexOptions.Compiled);
 }

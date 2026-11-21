@@ -16,6 +16,15 @@ public class DeviceInputTests
         Assert.Equal(expected, DeviceInput.EscapeForInputText(text));
 
     [Theory]
+    [InlineData("BACK", true)]
+    [InlineData("KEYCODE_HOME", true)]
+    [InlineData("4", true)]
+    [InlineData("HOME\n", false)]
+    [InlineData("HOME; reboot", false)]
+    public void ValidatesKeyNames(string key, bool expected) =>
+        Assert.Equal(expected, DeviceInput.IsValidKeyName(key));
+
+    [Theory]
     [InlineData("wifi 123", true)]
     [InlineData("蓝牙", false)]
     [InlineData("😀", false)]

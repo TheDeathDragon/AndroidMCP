@@ -100,8 +100,11 @@ internal sealed class LaunchAppTool : IToolHandler
             {
                 exitOk = line == "rc=0";
             }
+            // "Starting: Intent { cmp=... }" echoes the component, which may be named like
+            // ".ExceptionViewer"; only am's own failure lines count.
             else if (line.StartsWith("Error", System.StringComparison.Ordinal)
-                || line.Contains("Exception", System.StringComparison.Ordinal))
+                || line.StartsWith("Exception", System.StringComparison.Ordinal)
+                || line.Contains("Exception:", System.StringComparison.Ordinal))
             {
                 failed = true;
             }

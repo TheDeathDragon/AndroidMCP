@@ -6,6 +6,13 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+### Changed
+- Bump the agent: the `fast=true` screenshot mirror is released 5 s after the last fast capture (a live mirror doubled SurfaceFlinger CPU and raised visible jank 5 -> 52 frames while scrolling, for every host on the device), its teardown no longer races the frame reader, and the CLI and skill route per device and default to linear swipes.
+
+### Fixed
+- `launch_app` no longer reports failure for a component named like `.ExceptionViewer`: `am start` echoes the component, so only its own failure lines count.
+- Package and key names are validated with `\z`; `$` also matched before a trailing newline, which a shell reads as a second command. Single-segment package names such as `android` are accepted.
+
 ## [2611.0018] - 2026-11-21
 
 ### Changed
