@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 using AdvancedSharpAdbClient.Models;
 using AndroidMcp.Logging;
 
@@ -10,6 +11,7 @@ internal sealed class AgentRegistry : IDisposable
 {
     private readonly AdbHub adbHub;
     private readonly ConcurrentDictionary<string, AgentSession> sessions = new();
+    private int disposed;
 
     public AgentRegistry(AdbHub adbHub)
     {
@@ -66,6 +68,11 @@ internal sealed class AgentRegistry : IDisposable
 
     public void Dispose()
     {
+        // Runs from both the normal shutdown path and ProcessExit (SIGTERM / client exit).
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
         foreach (KeyValuePair<string, AgentSession> kv in sessions)
         {
             try

@@ -7,9 +7,9 @@ matching `BuildInfo.Version`).
 ## [Unreleased]
 
 ### Changed
-- Bump the agent to AndroidAgent main: Keep-Alive HTTP, in-process input, scaled JPEG screenshots, merged with `agent-fixes` (`/locales`, `/set-locale`, `/signature` 404, per-package guard), plus `easing=linear` swipes, display size and jar hash in `/info`, emoji kept in `/hierarchy`, a fast PNG encoder (~200 ms instead of 430-640 ms), `/set-locale` rejecting unsupported languages, and one atrace section per request.
+- Bump the agent to AndroidAgent main: Keep-Alive HTTP, in-process input, scaled JPEG screenshots, merged with `agent-fixes` (`/locales`, `/set-locale`, `/signature` 404, per-package guard), plus `easing=linear` swipes, display size, jar hash and `features` in `/info`, emoji kept in `/hierarchy`, a fast PNG encoder (~200 ms instead of 430-640 ms), `/set-locale` rejecting unsupported languages, and one atrace section per request.
 - `click`, `swipe`, `long_press`, `key_event`, `press_*`, `tap_element` and the scroll tools inject through the agent's `/input/*` (~20 ms instead of ~130 ms per call). Results report `via`. `adb shell input` is the fallback only when the agent cannot start or predates `/input`; other failures error instead of replaying, so a gesture is never performed twice.
-- Swipes use the agent's `easing=linear`, matching `input swipe` (constant velocity, flings). A 150 ms `swipe_direction` takes ~180 ms end to end instead of ~370 ms.
+- Swipes use the agent's `easing=linear`, matching `input swipe` (constant velocity, flings), when `/info` lists `swipe-easing`; older agents get the shell's linear swipe. A 150 ms `swipe_direction` takes ~180 ms end to end instead of ~370 ms.
 - Keep agent HTTP connections alive (10 s idle); the pool is rebuilt on every agent restart. `find_element` / `dump_hierarchy` drop from ~250 ms to ~25 ms.
 - `screenshot` defaults to JPEG q80 (~115 ms and ~60 KB against ~195 ms and ~800 KB for PNG on a 720x1640 screen) and takes `format` (`jpeg`/`png`) and `scale`; `quality` applies to JPEG only.
 - Each agent session forwards from an adb-assigned host port (`forward tcp:0`) instead of the fixed 9601-9699 pool. Two android-mcp processes, or another tool forwarding the same port, could silently take a session's port and send its requests to another phone.
@@ -21,6 +21,12 @@ matching `BuildInfo.Version`).
 - `input_text` types CJK and emoji.
 - `screen_size`, `swipe_direction` and the scroll tools use the current-rotation display size; `wm size` reported portrait dimensions in landscape, so gestures landed off-screen.
 - `key_event` with an unknown key name errors instead of reporting success.
+- `input_text` sends text in a JSON body: in the query, ~900 CJK characters exceeded the agent's 8192-byte request line.
+- Gesture durations are capped at 10 s, so a request cannot time out while the agent still holds the pointer and report failure for a gesture that landed.
+- An agent restart no longer cancels other tool calls' in-flight requests (the old HTTP client is retired after the request timeout).
+- `launch_app` judges success from `am start`'s exit status and messages, not a substring of the whole output.
+- Shell `input text` fallback escapes globs and `#`; a leading `#` typed nothing while reporting success.
+- Agent forwards are removed on SIGTERM / client exit and when a start fails.
 - Package names and key names are validated before they reach a shell command; a value read off the screen such as `com.foo; reboot` was executed as written.
 
 ## [2608.0015] - 2026-08-20

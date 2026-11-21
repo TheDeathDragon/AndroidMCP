@@ -52,7 +52,7 @@ internal sealed class InputSwipeTool : IToolHandler
                 ("y1", Schema.Integer("start y"), true),
                 ("x2", Schema.Integer("end x"), true),
                 ("y2", Schema.Integer("end y"), true),
-                ("duration_ms", Schema.Integer("swipe duration in ms, default 300"), false))
+                ("duration_ms", Schema.Integer("swipe duration in ms, default 300, max 10000"), false))
         };
     }
 

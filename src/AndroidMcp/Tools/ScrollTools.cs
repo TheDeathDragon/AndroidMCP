@@ -119,7 +119,7 @@ internal sealed class SwipeDirectionTool : IToolHandler
                 ("serial", Schema.String(Schema.SerialDescription), true),
                 ("direction", Schema.Enum("swipe direction", "up", "down", "left", "right"), true),
                 ("distance_percent", Schema.Integer("swipe span as percent of screen, 10..95, default 60"), false),
-                ("duration_ms", Schema.Integer("swipe duration, default 300"), false))
+                ("duration_ms", Schema.Integer("swipe duration in ms, default 300, max 10000"), false))
         };
     }
 
@@ -166,7 +166,7 @@ internal sealed class ScrollToEdgeTool : IToolHandler
                 ("direction", Schema.Enum("which edge", "up", "down", "left", "right"), true),
                 ("max_steps", Schema.Integer("safety cap, default 20"), false),
                 ("distance_percent", Schema.Integer("swipe span, 10..95, default 60"), false),
-                ("duration_ms", Schema.Integer("swipe duration, default 300"), false))
+                ("duration_ms", Schema.Integer("swipe duration in ms, default 300, max 10000"), false))
         };
     }
 
@@ -257,7 +257,7 @@ internal sealed class ScrollUntilVisibleTool : IToolHandler
                 ("direction", Schema.Enum("scroll direction", "up", "down", "left", "right"), true),
                 ("max_scrolls", Schema.Integer("safety cap, default 10"), false),
                 ("distance_percent", Schema.Integer("swipe span as percent, 10..95, default 60"), false),
-                ("duration_ms", Schema.Integer("swipe duration, default 300"), false),
+                ("duration_ms", Schema.Integer("swipe duration in ms, default 300, max 10000"), false),
                 ("container", SelectorSchema.Build(), false))
         };
     }

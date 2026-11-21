@@ -21,6 +21,9 @@ internal sealed class DeviceInput
     public const string ViaAgent = "agent";
     public const string ViaShell = "shell";
     private static readonly Regex KeyNameRegex = new("^[A-Za-z0-9_]{1,64}$", RegexOptions.Compiled);
+    // Gestures must finish well inside the 30 s HTTP timeout: a request that times out while
+    // the agent is still holding the pointer reports failure for a gesture that lands.
+    public const int MaxGestureMs = 10_000;
 
     private readonly AdbHub adb;
     private readonly AgentRegistry agents;
@@ -38,17 +41,33 @@ internal sealed class DeviceInput
 
     // easing=linear matches `input swipe` (constant velocity, so lists fling); the agent's
     // default ease-in-out ends near zero velocity. The agent schedules moves on absolute
-    // uptime and injects them async, unlike a batch of sync moves that the app's consume
-    // time stretches.
-    public Task<string> SwipeAsync(string serial, int x1, int y1, int x2, int y2, int durationMs) =>
-        RunAsync(serial,
+    // uptime; a batch of moves with relative waits drifts by each move's injection cost
+    // (a 150 ms gesture measured ~190 ms). An agent too old for easing would ignore it and
+    // ease, so the shell's linear swipe is used there instead.
+    public Task<string> SwipeAsync(string serial, int x1, int y1, int x2, int y2, int durationMs)
+    {
+        RequireGestureDuration(durationMs);
+        return RunAsync(serial,
             http => http.GetAsync(Inv($"/input/swipe?x1={x1}&y1={y1}&x2={x2}&y2={y2}&durationMs={durationMs}&easing=linear")),
-            Inv($"input swipe {x1} {y1} {x2} {y2} {durationMs}"));
+            Inv($"input swipe {x1} {y1} {x2} {y2} {durationMs}"),
+            agentUsable: session => session.SupportsLinearSwipe());
+    }
 
-    public Task<string> LongPressAsync(string serial, int x, int y, int durationMs) =>
-        RunAsync(serial,
+    public Task<string> LongPressAsync(string serial, int x, int y, int durationMs)
+    {
+        RequireGestureDuration(durationMs);
+        return RunAsync(serial,
             http => http.GetAsync(Inv($"/input/tap?x={x}&y={y}&durationMs={durationMs}")),
             Inv($"input swipe {x} {y} {x} {y} {durationMs}"));
+    }
+
+    private static void RequireGestureDuration(int durationMs)
+    {
+        if (durationMs < 0 || durationMs > MaxGestureMs)
+        {
+            throw new InvalidOperationException($"duration_ms must be 0..{MaxGestureMs}, got {durationMs}");
+        }
+    }
 
     // The key reaches a shell command on the fallback path; keycode names and numbers
     // never need anything beyond [A-Za-z0-9_].
@@ -63,10 +82,13 @@ internal sealed class DeviceInput
             "input keyevent " + key);
     }
 
-    // Non-ASCII has no shell fallback: `input text` cannot type it.
+    // Non-ASCII has no shell fallback: `input text` cannot type it. A JSON body, not the
+    // query: the agent caps the request line at 8192 bytes, which percent-encoded CJK
+    // (9 bytes per character) exceeds at ~900 characters.
     public Task<string> TextAsync(string serial, string text) =>
         RunAsync(serial,
-            http => http.GetAsync("/input/text?text=" + Uri.EscapeDataString(text)),
+            http => http.PostAsync("/input/text", new StringContent(
+                new JsonObject { ["text"] = text }.ToJsonString(), Encoding.UTF8, "application/json")),
             IsAscii(text) ? "input text " + EscapeForInputText(text) : null,
             notInjectedHint: IsAscii(text) ? null : "no focused editable field; focus an input field first");
 
@@ -74,10 +96,11 @@ internal sealed class DeviceInput
         string serial,
         Func<HttpClient, Task<HttpResponseMessage>> agentCall,
         string? shellCommand,
-        string? notInjectedHint = null)
+        string? notInjectedHint = null,
+        Func<AgentSession, bool>? agentUsable = null)
     {
         AgentSession? session = TryStartAgent(serial);
-        if (session is not null && !session.InputEndpointsMissing &&
+        if (session is not null && !session.InputEndpointsMissing && (agentUsable?.Invoke(session) ?? true) &&
             await CallAgentAsync(session, agentCall, notInjectedHint).ConfigureAwait(false))
         {
             return ViaAgent;
@@ -170,7 +193,10 @@ internal sealed class DeviceInput
                 case ' ':
                     sb.Append("%s");
                     break;
-                case '\'' or '"' or '\\' or '`' or '$' or '&' or '|' or ';' or '(' or ')' or '<' or '>':
+                // Shell metacharacters, globs (`*` would expand against the cwd) and `#`
+                // (a leading one comments the whole word out).
+                case '\'' or '"' or '\\' or '`' or '$' or '&' or '|' or ';' or '(' or ')' or '<' or '>'
+                    or '*' or '?' or '[' or ']' or '{' or '}' or '~' or '#' or '!':
                     sb.Append('\\').Append(c);
                     break;
                 default:

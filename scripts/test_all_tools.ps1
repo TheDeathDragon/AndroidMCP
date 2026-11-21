@@ -66,7 +66,7 @@ $null = Send-Request 'initialize' @{ protocolVersion = '2024-11-05'; capabilitie
 
 Test-Tool 'list_devices' @{} { param($c, $t) $t -match 'serial' } | Out-Null
 Test-Tool 'screenshot' @{ serial = $serial; quality = 40 } { param($c, $t) $c.type -eq 'image' -and $c.data.Length -gt 1000 } | Out-Null
-Test-Tool 'dump_hierarchy' @{ serial = $serial; compressed = $true } { param($c, $t) $t.StartsWith('<?xml') -or $t.StartsWith('<hierarchy') } | Out-Null
+Test-Tool 'dump_hierarchy' @{ serial = $serial; compressed = $true } { param($c, $t) $t.StartsWith('{"format":"lean"') -or $t.StartsWith('<?xml') } | Out-Null
 Test-Tool 'device_info' @{ serial = $serial } { param($c, $t) $t -match 'brand' -and $t -match 'model' } | Out-Null
 Test-Tool 'shell' @{ serial = $serial; command = 'id' } { param($c, $t) $t -match 'uid=' } | Out-Null
 Test-Tool 'get_top_activity' @{ serial = $serial } { param($c, $t) $t -match 'component' } | Out-Null

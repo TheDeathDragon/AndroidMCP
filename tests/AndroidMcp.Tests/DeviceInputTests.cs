@@ -9,6 +9,8 @@ public class DeviceInputTests
     [InlineData("hello world", "hello%sworld")]
     [InlineData("a&b;c|d", @"a\&b\;c\|d")]
     [InlineData("$(rm)", @"\$\(rm\)")]
+    [InlineData("#tag *.txt ?", @"\#tag%s\*.txt%s\?")]
+    [InlineData("~[a]{b}!", @"\~\[a\]\{b\}\!")]
     [InlineData("it's \"x\"", @"it\'s%s\""x\""")]
     public void EscapesShellMetacharactersForInputText(string text, string expected) =>
         Assert.Equal(expected, DeviceInput.EscapeForInputText(text));

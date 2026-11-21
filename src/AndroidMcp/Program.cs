@@ -95,6 +95,9 @@ internal static class Program
             e.Cancel = true;
             cts.Cancel();
         };
+        // MCP clients usually stop the server by closing stdin or sending SIGTERM; without
+        // this, each run leaves its adb-assigned forwards behind in the shared adb server.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => agents.Dispose();
         Log.Info($"android-mcp v{BuildInfo.Version} ({BuildInfo.GitHash}) starting (transport={kind}, tools={tools.Descriptors.Count})");
         try
         {

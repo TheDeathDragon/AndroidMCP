@@ -71,8 +71,8 @@ scripts/                    # install / publish / smoke / extract_changelog
 - **Input**: `Adb/DeviceInput` injects via the agent's `/input/*`. Shell
   `input` is the fallback only when the agent can't start or returns 404;
   any other failure errors (a replay could double a gesture). Swipes use
-  `easing=linear` to match `input swipe`'s fling; batched sync `move` steps
-  stretch the gesture.
+  `easing=linear` (when `/info` lists `swipe-easing`) to match `input swipe`'s
+  fling; batched `move` steps with relative waits drift longer.
 - **Latency**: the agent writes one atrace section per request
   (`agent /path`); record with `atrace_apps: "app_process"` to see device-side
   time per endpoint.

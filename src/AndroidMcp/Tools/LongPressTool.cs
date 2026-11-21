@@ -21,7 +21,7 @@ internal sealed class LongPressTool : IToolHandler
                 ("serial", Schema.String(Schema.SerialDescription), true),
                 ("x", Schema.Integer("x in pixels"), true),
                 ("y", Schema.Integer("y in pixels"), true),
-                ("duration_ms", Schema.Integer("hold duration, default 800"), false))
+                ("duration_ms", Schema.Integer("hold duration in ms, default 800, max 10000"), false))
         };
     }
 

@@ -67,20 +67,12 @@ internal sealed class LaunchAppTool : IToolHandler
         const string launcherIntent = "-a android.intent.action.MAIN -c android.intent.category.LAUNCHER";
         string command =
             $"c=$(cmd package query-activities --brief {launcherIntent} {packageName} | grep / | head -n 1 | tr -d ' '); " +
-            $"if [ -n \"$c\" ]; then echo \"component=$c\"; am start {launcherIntent} -f 0x10200000 -n \"$c\"; " +
+            $"if [ -n \"$c\" ]; then echo \"component=$c\"; am start {launcherIntent} -f 0x10200000 -n \"$c\"; echo \"rc=$?\"; " +
             $"else echo 'Error: no launcher activity in {packageName}'; fi";
         ConsoleOutputReceiver receiver = new();
         adb.Client.ExecuteRemoteCommand(command, device, receiver, Encoding.UTF8);
         string output = (receiver.ToString() ?? string.Empty).Trim();
-        string? component = null;
-        foreach (string line in output.Split('\n'))
-        {
-            if (line.StartsWith("component=", System.StringComparison.Ordinal))
-            {
-                component = line["component=".Length..].Trim();
-            }
-        }
-        bool ok = component is not null && !output.Contains("Error", System.StringComparison.Ordinal);
+        (bool ok, string? component) = ParseLaunchOutput(output);
         return Task.FromResult(ToolCallResult.Json(new JsonObject
         {
             ["ok"] = ok,
@@ -88,6 +80,33 @@ internal sealed class LaunchAppTool : IToolHandler
             ["component"] = component,
             ["output"] = output
         }));
+    }
+
+    // Judged on `am start`'s own exit status and messages only: a component may itself be
+    // named like ".ErrorActivity", and some failures print an Exception without "Error".
+    internal static (bool Ok, string? Component) ParseLaunchOutput(string output)
+    {
+        string? component = null;
+        bool exitOk = false;
+        bool failed = false;
+        foreach (string raw in output.Split('\n'))
+        {
+            string line = raw.Trim();
+            if (line.StartsWith("component=", System.StringComparison.Ordinal))
+            {
+                component = line["component=".Length..];
+            }
+            else if (line.StartsWith("rc=", System.StringComparison.Ordinal))
+            {
+                exitOk = line == "rc=0";
+            }
+            else if (line.StartsWith("Error", System.StringComparison.Ordinal)
+                || line.Contains("Exception", System.StringComparison.Ordinal))
+            {
+                failed = true;
+            }
+        }
+        return (component is not null && exitOk && !failed, component);
     }
 }
 

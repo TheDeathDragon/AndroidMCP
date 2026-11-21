@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -29,6 +30,7 @@ internal sealed class AgentSession : IDisposable
     private volatile bool started;
     private int remotePort;
     private bool weLaunched;
+    private int launchGeneration;
 
     public string TransportId => transportId;
     public int Port => localPort;
@@ -37,6 +39,33 @@ internal sealed class AgentSession : IDisposable
     public bool IsStarted => started;
     public HttpClient Http => http;
     public bool InputEndpointsMissing { get; set; }
+    // -1 unknown, 0 no, 1 yes. Agents without "swipe-easing" in /info's features silently
+    // ignore easing=linear and ease. Only a definitive /info answer is cached: a transient
+    // failure must not pin every later swipe of this agent to the slower shell path.
+    private int linearSwipe = -1;
+
+    public bool SupportsLinearSwipe()
+    {
+        int known = Volatile.Read(ref linearSwipe);
+        if (known >= 0)
+        {
+            return known == 1;
+        }
+        try
+        {
+            using CancellationTokenSource cts = new(2000);
+            string info = http.GetStringAsync("/info", cts.Token).GetAwaiter().GetResult();
+            bool yes = System.Text.Json.Nodes.JsonNode.Parse(info)?["features"] is System.Text.Json.Nodes.JsonArray features
+                && features.Any(f => f?.GetValueKind() == System.Text.Json.JsonValueKind.String && (string?)f == "swipe-easing");
+            Volatile.Write(ref linearSwipe, yes ? 1 : 0);
+            return yes;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug($"swipe capability probe failed on transport {transportId}: {ex.Message}");
+            return false;
+        }
+    }
 
     public AgentSession(AdbHub adbHub, string transportId)
     {
@@ -64,13 +93,19 @@ internal sealed class AgentSession : IDisposable
     }
 
     // Pooled sockets ride the old adb forward and the old agent process; after a
-    // restart they would tunnel to a dead or different agent.
+    // restart they would tunnel to a dead or different agent. The old client is disposed
+    // only after the request timeout: other tool calls may still be awaiting it, and
+    // cancelling a request whose gesture was already injected invites a retry that
+    // performs it twice.
     private void ResetHttpClient()
     {
         HttpClient old = http;
         http = CreateHttpClient(localPort);
-        old.Dispose();
+        RetireLater(old);
     }
+
+    private static void RetireLater(HttpClient client) =>
+        _ = Task.Delay(TimeSpan.FromSeconds(35)).ContinueWith(_ => client.Dispose(), TaskScheduler.Default);
 
     public bool EnsureStarted()
     {
@@ -108,19 +143,35 @@ internal sealed class AgentSession : IDisposable
         }
         localPort = port.Value;
         ResetHttpClient();
-        if (TryReuseCanonicalAgent(client, device))
+        bool ok = TryReuseCanonicalAgent(client, device, out bool outdatedButHealthy)
+            || LaunchOwnAgent(client, device)
+            // Replacing an outdated agent failed before it was killed (no jar, push
+            // failure, boot not completed): keep using it rather than fail every tool.
+            || (outdatedButHealthy && CheckHealth() && MarkReused("outdated agent kept; replacement failed"));
+        if (!ok)
         {
-            return true;
+            RemoveForward();
+            return false;
         }
+        Volatile.Write(ref linearSwipe, -1);
+        return true;
+    }
 
-        return LaunchOwnAgent(client, device);
+    private bool MarkReused(string why)
+    {
+        remotePort = CanonicalAgentPort;
+        weLaunched = false;
+        started = true;
+        Log.Info($"agent reused on transport {transportId}: forward {localPort} -> :{CanonicalAgentPort} ({why})");
+        return true;
     }
 
     // UiAutomation is a per-device singleton. If another process already
     // serves the canonical port :9500, launching our own would deadlock on
     // UiAutomation.connect — detect it and forward to the existing one.
-    private bool TryReuseCanonicalAgent(AdbClient client, DeviceData device)
+    private bool TryReuseCanonicalAgent(AdbClient client, DeviceData device, out bool outdatedButHealthy)
     {
+        outdatedButHealthy = false;
         if (!CheckHealth())
         {
             return false;
@@ -131,13 +182,10 @@ internal sealed class AgentSession : IDisposable
         if (!HasInputEndpoints() && IsOwnAgentJar(client, device))
         {
             Log.Info($"replacing outdated android-mcp agent on transport {transportId}");
+            outdatedButHealthy = true;
             return false;
         }
-        remotePort = CanonicalAgentPort;
-        weLaunched = false;
-        started = true;
-        Log.Info($"agent reused on transport {transportId}: forward {localPort} -> :{CanonicalAgentPort}");
-        return true;
+        return MarkReused("healthy");
     }
 
     // /input/tap without coordinates is a 400 on agents that have it and a 404 on older ones;
@@ -165,7 +213,14 @@ internal sealed class AgentSession : IDisposable
                 $"for p in $(pgrep -f 'la.shiro.agent.Server --port {CanonicalAgentPort}'); do " +
                 $"grep -q '{AgentRemotePath}' /proc/$p/environ 2>/dev/null && echo own; done",
                 device, receiver, Encoding.UTF8);
-            return receiver.ToString().Contains("own", StringComparison.Ordinal);
+            foreach (string line in receiver.ToString().Split('\n'))
+            {
+                if (line.Trim() == "own")
+                {
+                    return true;
+                }
+            }
+            return false;
         }
         catch
         {
@@ -263,6 +318,9 @@ internal sealed class AgentSession : IDisposable
     private void LaunchServerProcess(AdbClient client, DeviceData device, int port)
     {
         string command = $"CLASSPATH={AgentRemotePath} app_process / la.shiro.agent.Server --port {port}";
+        // The shell stream ends when this agent process dies; a previous launch's stream can
+        // end after a relaunch already succeeded, and must not mark the new agent dead.
+        int generation = Interlocked.Increment(ref launchGeneration);
         Task.Run(() =>
         {
             try
@@ -273,7 +331,10 @@ internal sealed class AgentSession : IDisposable
             catch
             {
             }
-            started = false;
+            if (Volatile.Read(ref launchGeneration) == generation)
+            {
+                started = false;
+            }
         });
     }
 
@@ -308,6 +369,14 @@ internal sealed class AgentSession : IDisposable
     }
 
     public void Stop()
+    {
+        lock (startGate)
+        {
+            StopLocked();
+        }
+    }
+
+    private void StopLocked()
     {
         bool launched = weLaunched;
         int rp = remotePort;
@@ -358,6 +427,6 @@ internal sealed class AgentSession : IDisposable
         try
         { Stop(); }
         catch { }
-        http.Dispose();
+        RetireLater(http);
     }
 }
