@@ -6,6 +6,8 @@ matching `BuildInfo.Version`).
 
 ## [Unreleased]
 
+## [2611.0018] - 2026-11-21
+
 ### Changed
 - Bump the agent to AndroidAgent main: Keep-Alive HTTP, in-process input, scaled JPEG screenshots, merged with `agent-fixes` (`/locales`, `/set-locale`, `/signature` 404, per-package guard), plus `easing=linear` swipes, display size, jar hash and `features` in `/info`, emoji kept in `/hierarchy`, a fast PNG encoder (~200 ms instead of 430-640 ms), `/set-locale` rejecting unsupported languages, and one atrace section per request.
 - `click`, `swipe`, `long_press`, `key_event`, `press_*`, `tap_element` and the scroll tools inject through the agent's `/input/*` (~20 ms instead of ~130 ms per call). Results report `via`. `adb shell input` is the fallback only when the agent cannot start or predates `/input`; other failures error instead of replaying, so a gesture is never performed twice.
